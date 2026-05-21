@@ -13,6 +13,8 @@ pnpm install
 
 Start local infrastructure:
 
+Note: this command works after the local infrastructure task adds `docker-compose.yml`.
+
 ```bash
 docker compose up -d
 ```

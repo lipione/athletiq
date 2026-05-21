@@ -1,11 +1,7 @@
+pnpm-lock.yaml
 node_modules
 .turbo
 dist
 coverage
 .next
 .expo
-.git
-.env
-.env.local
-.env.*.local
-*.log

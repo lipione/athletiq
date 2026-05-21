@@ -102,6 +102,7 @@ packages/
 .editorconfig
 .env.example
 .gitignore
+.prettierignore
 docker-compose.yml
 eslint.config.mjs
 package.json
@@ -120,6 +121,7 @@ turbo.json
 - Create: `turbo.json`
 - Create: `.gitignore`
 - Create: `.dockerignore`
+- Create: `.prettierignore`
 - Create: `.editorconfig`
 - Create: `.env.example`
 - Create: `prettier.config.mjs`
@@ -135,7 +137,7 @@ turbo.json
   "private": true,
   "packageManager": "pnpm@10.12.1",
   "engines": {
-    "node": ">=22.12.0",
+    "node": ">=22.13.0",
     "pnpm": ">=10.12.1"
   },
   "scripts": {
@@ -163,8 +165,8 @@ turbo.json
 
 ```yaml
 packages:
-  - "apps/*"
-  - "packages/*"
+  - 'apps/*'
+  - 'packages/*'
 ```
 
 - [ ] **Step 3: Create `turbo.json`**
@@ -221,10 +223,25 @@ coverage
 .next
 .expo
 .git
+.env
+.env.local
+.env.*.local
 *.log
 ```
 
-- [ ] **Step 6: Create `.editorconfig`**
+- [ ] **Step 6: Create `.prettierignore`**
+
+```gitignore
+pnpm-lock.yaml
+node_modules
+.turbo
+dist
+coverage
+.next
+.expo
+```
+
+- [ ] **Step 7: Create `.editorconfig`**
 
 ```ini
 root = true
@@ -238,7 +255,7 @@ insert_final_newline = true
 trim_trailing_whitespace = true
 ```
 
-- [ ] **Step 7: Create `.env.example`**
+- [ ] **Step 8: Create `.env.example`**
 
 ```bash
 NODE_ENV=development
@@ -248,7 +265,7 @@ REDIS_URL=redis://localhost:6379
 WEB_PUBLIC_API_URL=http://localhost:4000/api
 ```
 
-- [ ] **Step 8: Create `prettier.config.mjs`**
+- [ ] **Step 9: Create `prettier.config.mjs`**
 
 ```js
 /** @type {import("prettier").Config} */
@@ -256,11 +273,11 @@ export default {
   semi: true,
   singleQuote: true,
   trailingComma: 'all',
-  printWidth: 100
+  printWidth: 100,
 };
 ```
 
-- [ ] **Step 9: Create `eslint.config.mjs`**
+- [ ] **Step 10: Create `eslint.config.mjs`**
 
 ```js
 import js from '@eslint/js';
@@ -268,32 +285,21 @@ import tseslint from 'typescript-eslint';
 
 export default [
   {
-    ignores: [
-      '**/dist/**',
-      '**/.next/**',
-      '**/.expo/**',
-      '**/coverage/**',
-      '**/node_modules/**'
-    ]
+    ignores: ['**/dist/**', '**/.next/**', '**/.expo/**', '**/coverage/**', '**/node_modules/**'],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
     files: ['**/*.{ts,tsx}'],
-    languageOptions: {
-      parserOptions: {
-        projectService: true
-      }
-    },
     rules: {
       '@typescript-eslint/consistent-type-imports': 'error',
-      '@typescript-eslint/no-explicit-any': 'error'
-    }
-  }
+      '@typescript-eslint/no-explicit-any': 'error',
+    },
+  },
 ];
 ```
 
-- [ ] **Step 10: Create `README.md`**
+- [ ] **Step 11: Create `README.md`**
 
 ````md
 # ATHLETIQ
@@ -310,6 +316,8 @@ pnpm install
 ```
 
 Start local infrastructure:
+
+Note: this command works after the local infrastructure task adds `docker-compose.yml`.
 
 ```bash
 docker compose up -d
@@ -334,7 +342,7 @@ pnpm --filter @athletiq/mobile dev
 ```
 ````
 
-- [ ] **Step 11: Install root dependencies**
+- [ ] **Step 12: Install root dependencies**
 
 Run:
 
@@ -345,10 +353,10 @@ pnpm install
 
 Expected: `pnpm-lock.yaml` is created and install exits successfully.
 
-- [ ] **Step 12: Commit root workspace files**
+- [ ] **Step 13: Commit root workspace files**
 
 ```bash
-git add package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json .gitignore .dockerignore .editorconfig .env.example prettier.config.mjs eslint.config.mjs README.md
+git add package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json .gitignore .dockerignore .prettierignore .editorconfig .env.example prettier.config.mjs eslint.config.mjs README.md
 git commit -m "chore: initialize monorepo workspace"
 ```
 
@@ -368,9 +376,7 @@ git commit -m "chore: initialize monorepo workspace"
   "name": "@athletiq/config",
   "version": "0.1.0",
   "private": true,
-  "files": [
-    "tsconfig"
-  ]
+  "files": ["tsconfig"]
 }
 ```
 
@@ -496,8 +502,8 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
-    environment: 'node'
-  }
+    environment: 'node',
+  },
 });
 ```
 
@@ -527,10 +533,10 @@ describe('parseEnv', () => {
   it('parses a valid environment object', () => {
     const env = parseEnv(
       {
-        API_PORT: z.coerce.number().int().positive()
+        API_PORT: z.coerce.number().int().positive(),
       },
       {
-        API_PORT: '4000'
+        API_PORT: '4000',
       },
     );
 
@@ -541,10 +547,10 @@ describe('parseEnv', () => {
     expect(() =>
       parseEnv(
         {
-          API_PORT: z.coerce.number().int().positive()
+          API_PORT: z.coerce.number().int().positive(),
         },
         {
-          API_PORT: 'invalid'
+          API_PORT: 'invalid',
         },
       ),
     ).toThrow();
@@ -635,8 +641,8 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
-    environment: 'node'
-  }
+    environment: 'node',
+  },
 });
 ```
 
@@ -653,13 +659,13 @@ export const athletiqColors = {
   background: '#F5F7FA',
   border: '#D0D5DD',
   danger: '#D92D20',
-  warning: '#F79009'
+  warning: '#F79009',
 } as const;
 
 export const athletiqRadii = {
   sm: 4,
   md: 8,
-  lg: 12
+  lg: 12,
 } as const;
 
 export const athletiqSpacing = {
@@ -667,7 +673,7 @@ export const athletiqSpacing = {
   sm: 8,
   md: 16,
   lg: 24,
-  xl: 32
+  xl: 32,
 } as const;
 ```
 
@@ -737,11 +743,11 @@ services:
       POSTGRES_PASSWORD: athletiq
       POSTGRES_DB: athletiq
     ports:
-      - "5432:5432"
+      - '5432:5432'
     volumes:
       - athletiq-postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U athletiq -d athletiq"]
+      test: ['CMD-SHELL', 'pg_isready -U athletiq -d athletiq']
       interval: 5s
       timeout: 5s
       retries: 10
@@ -750,9 +756,9 @@ services:
     image: redis:7-alpine
     container_name: athletiq-redis
     ports:
-      - "6379:6379"
+      - '6379:6379'
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ['CMD', 'redis-cli', 'ping']
       interval: 5s
       timeout: 5s
       retries: 10
@@ -819,8 +825,8 @@ export default defineConfig({
   out: './drizzle',
   dialect: 'postgresql',
   dbCredentials: {
-    url: process.env.DATABASE_URL ?? 'postgres://athletiq:athletiq@localhost:5432/athletiq'
-  }
+    url: process.env.DATABASE_URL ?? 'postgres://athletiq:athletiq@localhost:5432/athletiq',
+  },
 });
 ```
 
@@ -833,7 +839,7 @@ export const appSettings = pgTable('app_settings', {
   key: varchar('key', { length: 128 }).primaryKey(),
   value: jsonb('value').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 ```
 
@@ -850,14 +856,14 @@ export function createDatabase(databaseUrl = process.env.DATABASE_URL) {
   }
 
   const pool = new Pool({
-    connectionString: databaseUrl
+    connectionString: databaseUrl,
   });
 
   const db = drizzle(pool, { schema });
 
   return {
     db,
-    pool
+    pool,
   };
 }
 ```
@@ -978,8 +984,8 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     environment: 'node',
-    globals: false
-  }
+    globals: false,
+  },
 });
 ```
 
@@ -992,7 +998,7 @@ import { parseEnv } from '@athletiq/shared';
 export const apiEnv = parseEnv(
   {
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
-    API_PORT: z.coerce.number().int().positive().default(4000)
+    API_PORT: z.coerce.number().int().positive().default(4000),
   },
   process.env,
 );
@@ -1009,7 +1015,7 @@ export class HealthController {
   getHealth() {
     return {
       status: 'ok',
-      service: 'athletiq-api'
+      service: 'athletiq-api',
     };
   }
 }
@@ -1022,7 +1028,7 @@ import { Module } from '@nestjs/common';
 import { HealthController } from './health.controller.js';
 
 @Module({
-  controllers: [HealthController]
+  controllers: [HealthController],
 })
 export class HealthModule {}
 ```
@@ -1034,7 +1040,7 @@ import { Module } from '@nestjs/common';
 import { HealthModule } from './health/health.module.js';
 
 @Module({
-  imports: [HealthModule]
+  imports: [HealthModule],
 })
 export class AppModule {}
 ```
@@ -1049,10 +1055,7 @@ import { AppModule } from './app.module.js';
 import { apiEnv } from './config/env.js';
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestFastifyApplication>(
-    AppModule,
-    new FastifyAdapter(),
-  );
+  const app = await NestFactory.create<NestFastifyApplication>(AppModule, new FastifyAdapter());
 
   app.setGlobalPrefix('api');
 
@@ -1074,12 +1077,10 @@ import { AppModule } from '../src/app.module.js';
 describe('Health endpoint', () => {
   it('returns API health status', async () => {
     const moduleRef = await Test.createTestingModule({
-      imports: [AppModule]
+      imports: [AppModule],
     }).compile();
 
-    const app = moduleRef.createNestApplication<NestFastifyApplication>(
-      new FastifyAdapter(),
-    );
+    const app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api');
 
     await app.init();
@@ -1091,7 +1092,7 @@ describe('Health endpoint', () => {
       .expect((response) => {
         expect(response.body).toEqual({
           status: 'ok',
-          service: 'athletiq-api'
+          service: 'athletiq-api',
         });
       });
 
@@ -1191,8 +1192,8 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
-    environment: 'node'
-  }
+    environment: 'node',
+  },
 });
 ```
 
@@ -1205,7 +1206,7 @@ import { parseEnv } from '@athletiq/shared';
 export const workerEnv = parseEnv(
   {
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
-    REDIS_URL: z.string().url().default('redis://localhost:6379')
+    REDIS_URL: z.string().url().default('redis://localhost:6379'),
   },
   process.env,
 );
@@ -1217,7 +1218,7 @@ export const workerEnv = parseEnv(
 export const QueueNames = {
   documentExtraction: 'document-extraction',
   notifications: 'notifications',
-  reports: 'reports'
+  reports: 'reports',
 } as const;
 
 export type QueueName = (typeof QueueNames)[keyof typeof QueueNames];
@@ -1229,7 +1230,7 @@ export type QueueName = (typeof QueueNames)[keyof typeof QueueNames];
 export function runHealthJob() {
   return {
     status: 'ok',
-    service: 'athletiq-worker'
+    service: 'athletiq-worker',
   };
 }
 ```
@@ -1263,7 +1264,7 @@ describe('worker foundation', () => {
   it('runs the health job', () => {
     expect(runHealthJob()).toEqual({
       status: 'ok',
-      service: 'athletiq-worker'
+      service: 'athletiq-worker',
     });
   });
 });
@@ -1364,8 +1365,8 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
-    environment: 'node'
-  }
+    environment: 'node',
+  },
 });
 ```
 
@@ -1375,7 +1376,7 @@ export default defineConfig({
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
-  reactStrictMode: true
+  reactStrictMode: true,
 };
 
 export default nextConfig;
@@ -1397,7 +1398,13 @@ export default nextConfig;
   color: #101828;
   background: #f5f7fa;
   font-family:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif;
 }
 
 * {
@@ -1421,7 +1428,7 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: 'ATHLETIQ',
-  description: 'Verified athlete identity and school sports infrastructure.'
+  description: 'Verified athlete identity and school sports infrastructure.',
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
@@ -1447,7 +1454,7 @@ export default function HomePage() {
         placeItems: 'center',
         background: athletiqColors.background,
         color: athletiqColors.ink,
-        padding: 24
+        padding: 24,
       }}
     >
       <section style={{ maxWidth: 720 }}>
@@ -1583,8 +1590,8 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
-    environment: 'node'
-  }
+    environment: 'node',
+  },
 });
 ```
 
@@ -1611,25 +1618,25 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     padding: 24,
-    backgroundColor: athletiqColors.background
+    backgroundColor: athletiqColors.background,
   },
   eyebrow: {
     color: athletiqColors.green,
     fontWeight: '700',
-    marginBottom: 12
+    marginBottom: 12,
   },
   title: {
     color: athletiqColors.navy,
     fontSize: 34,
     fontWeight: '800',
     lineHeight: 40,
-    marginBottom: 12
+    marginBottom: 12,
   },
   body: {
     color: athletiqColors.muted,
     fontSize: 17,
-    lineHeight: 25
-  }
+    lineHeight: 25,
+  },
 });
 ```
 
@@ -1815,7 +1822,7 @@ curl http://localhost:4000/api/health
 Expected:
 
 ```json
-{"status":"ok","service":"athletiq-api"}
+{ "status": "ok", "service": "athletiq-api" }
 ```
 
 - [ ] **Step 5: Run web locally**
