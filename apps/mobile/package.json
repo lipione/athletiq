@@ -1,0 +1,26 @@
+{
+  "name": "@athletiq/mobile",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "App.tsx",
+  "scripts": {
+    "build": "tsc -p tsconfig.json --outDir dist --noEmit false",
+    "dev": "expo start",
+    "ios": "expo start --ios",
+    "android": "expo start --android",
+    "lint": "eslint . --max-warnings=0",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@athletiq/ui": "workspace:*",
+    "expo": "^55.0.0",
+    "react": "^19.1.0",
+    "react-native": "^0.83.0"
+  },
+  "devDependencies": {
+    "@athletiq/config": "workspace:*",
+    "@types/react": "^19.1.6"
+  }
+}

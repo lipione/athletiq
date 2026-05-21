@@ -1,0 +1,10 @@
+{
+  "extends": "@athletiq/config/tsconfig/react.json",
+  "compilerOptions": {
+    "allowSyntheticDefaultImports": true,
+    "jsx": "react-native",
+    "noEmit": true,
+    "outDir": "dist"
+  },
+  "include": ["App.tsx", "src/**/*.ts", "src/**/*.tsx"]
+}

@@ -1,0 +1,18 @@
+{
+  "expo": {
+    "name": "ATHLETIQ",
+    "slug": "athletiq",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "athletiq",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.athletiq.app"
+    },
+    "android": {
+      "package": "com.athletiq.app"
+    }
+  }
+}
