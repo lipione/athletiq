@@ -207,8 +207,8 @@ coverage
 .next
 .expo
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
 *.log
 .DS_Store
 ```
@@ -224,8 +224,8 @@ coverage
 .expo
 .git
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
 *.log
 ```
 
