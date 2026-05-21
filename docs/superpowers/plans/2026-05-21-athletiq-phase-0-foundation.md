@@ -260,8 +260,10 @@ trim_trailing_whitespace = true
 ```bash
 NODE_ENV=development
 API_PORT=4000
-DATABASE_URL=postgres://athletiq:athletiq@localhost:5432/athletiq
-REDIS_URL=redis://localhost:6379
+ATHLETIQ_POSTGRES_PORT=15432
+ATHLETIQ_REDIS_PORT=16379
+DATABASE_URL=postgres://athletiq:athletiq@localhost:15432/athletiq
+REDIS_URL=redis://localhost:16379
 WEB_PUBLIC_API_URL=http://localhost:4000/api
 ```
 
@@ -737,13 +739,12 @@ git commit -m "chore: add shared ui tokens"
 services:
   postgres:
     image: postgres:17-alpine
-    container_name: athletiq-postgres
     environment:
       POSTGRES_USER: athletiq
       POSTGRES_PASSWORD: athletiq
       POSTGRES_DB: athletiq
     ports:
-      - '5432:5432'
+      - '${ATHLETIQ_POSTGRES_PORT:-15432}:5432'
     volumes:
       - athletiq-postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -754,9 +755,8 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: athletiq-redis
     ports:
-      - '6379:6379'
+      - '${ATHLETIQ_REDIS_PORT:-16379}:6379'
     healthcheck:
       test: ['CMD', 'redis-cli', 'ping']
       interval: 5s
@@ -825,7 +825,7 @@ export default defineConfig({
   out: './drizzle',
   dialect: 'postgresql',
   dbCredentials: {
-    url: process.env.DATABASE_URL ?? 'postgres://athletiq:athletiq@localhost:5432/athletiq',
+    url: process.env.DATABASE_URL ?? 'postgres://athletiq:athletiq@localhost:15432/athletiq',
   },
 });
 ```
@@ -888,8 +888,8 @@ pnpm --filter @athletiq/db build
 
 Expected:
 
-- PostgreSQL starts on port `5432`.
-- Redis starts on port `6379`.
+- PostgreSQL starts on port `15432` by default.
+- Redis starts on port `16379` by default.
 - A migration folder is created in `packages/db/drizzle`.
 - `packages/db/dist/index.js` exists.
 
