@@ -95,4 +95,29 @@ describe('phase 14 enterprise web product', () => {
     expect(markup).toContain('Create athlete draft');
     expect(markup).toContain('Tournament Registration');
   });
+
+  it('renders the live coach and referee console entry points', async () => {
+    const { CoachRefereeConsole } = await import('./components/live/coach-referee-console.js');
+
+    const markup = renderToStaticMarkup(<CoachRefereeConsole />);
+
+    expect(markup).toContain('Live coach and referee workspace');
+    expect(markup).toContain('Official Auth');
+    expect(markup).toContain('Submit result');
+    expect(markup).toContain('Capture event');
+  });
+
+  it('renders the live federation and government analytics consoles', async () => {
+    const { AnalyticsConsole } = await import('./components/live/analytics-console.js');
+
+    const federationMarkup = renderToStaticMarkup(<AnalyticsConsole mode="federation" />);
+    const governmentMarkup = renderToStaticMarkup(<AnalyticsConsole mode="government" />);
+
+    expect(federationMarkup).toContain('Live federation workspace');
+    expect(federationMarkup).toContain('Federation Rankings');
+    expect(federationMarkup).toContain('Draft report');
+    expect(governmentMarkup).toContain('Live government intelligence workspace');
+    expect(governmentMarkup).toContain('Aggregate Participation');
+    expect(governmentMarkup).toContain('Data Quality');
+  });
 });

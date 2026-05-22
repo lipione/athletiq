@@ -1,6 +1,8 @@
 import { AppShell } from '../../../src/components/phase14/app-shell.js';
 import { DashboardWorkspace } from '../../../src/components/phase14/dashboard-workspace.js';
 import { ErrorState } from '../../../src/components/phase14/state.js';
+import { AnalyticsConsole } from '../../../src/components/live/analytics-console.js';
+import { CoachRefereeConsole } from '../../../src/components/live/coach-referee-console.js';
 import { SchoolAdminConsole } from '../../../src/components/live/school-admin-console.js';
 import { SuperAdminConsole } from '../../../src/components/live/super-admin-console.js';
 import {
@@ -44,6 +46,12 @@ export default async function WorkspacePage({ params }: WorkspacePageProps) {
         <SuperAdminConsole />
       ) : roleSlug === 'school-admin' ? (
         <SchoolAdminConsole />
+      ) : roleSlug === 'coach-referee' ? (
+        <CoachRefereeConsole />
+      ) : roleSlug === 'federation' ? (
+        <AnalyticsConsole mode="federation" />
+      ) : roleSlug === 'government' ? (
+        <AnalyticsConsole mode="government" />
       ) : (
         <DashboardWorkspace dashboard={dashboard} />
       )}
