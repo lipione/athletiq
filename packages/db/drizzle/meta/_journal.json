@@ -8,6 +8,83 @@
       "when": 1779382985238,
       "tag": "0000_skinny_gunslinger",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1779388438593,
+      "tag": "0001_even_the_executioner",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1779393271740,
+      "tag": "0002_phase_8_tenancy",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1779397529688,
+      "tag": "0003_drop_app_settings",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1779398776764,
+      "tag": "0004_phase_9_auth_security",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1779400385654,
+      "tag": "0005_phase_9_privacy",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1779402868415,
+      "tag": "0006_phase_10_registration_billing",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1779405074774,
+      "tag": "0007_phase_10_hardening",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1779417274805,
+      "tag": "0008_phase_11_documents",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1779433788855,
+      "tag": "0009_phase_12_bracketing",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1779440045808,
+      "tag": "0010_phase_13_scheduling",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1779445780747,
+      "tag": "0011_phase_13_scheduling_hardening",
+      "breakpoints": true
     }
   ]
 }

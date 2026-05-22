@@ -1,0 +1,1 @@
+export const ATHLETIQ_DATABASE = Symbol('ATHLETIQ_DATABASE');

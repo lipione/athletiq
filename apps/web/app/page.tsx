@@ -1,26 +1,13 @@
-import { athletiqColors } from '@athletiq/ui';
+import { AppShell } from '../src/components/phase14/app-shell.js';
+import { DashboardWorkspace } from '../src/components/phase14/dashboard-workspace.js';
+import { getDashboardSnapshot } from '../src/lib/phase14-data.js';
 
 export default function HomePage() {
+  const dashboard = getDashboardSnapshot('super-admin');
+
   return (
-    <main
-      style={{
-        minHeight: '100vh',
-        display: 'grid',
-        placeItems: 'center',
-        background: athletiqColors.background,
-        color: athletiqColors.ink,
-        padding: 24,
-      }}
-    >
-      <section style={{ maxWidth: 720 }}>
-        <p style={{ color: athletiqColors.green, fontWeight: 700, margin: 0 }}>ATHLETIQ</p>
-        <h1 style={{ color: athletiqColors.navy, fontSize: 42, lineHeight: 1.1, margin: '12px 0' }}>
-          Track the Rise. Train the Future.
-        </h1>
-        <p style={{ color: athletiqColors.muted, fontSize: 18, lineHeight: 1.6, margin: 0 }}>
-          Verified athlete identity and tournament infrastructure for school sports.
-        </p>
-      </section>
-    </main>
+    <AppShell activeRole="super-admin" eyebrow="Track the Rise. Train the Future." title="ATHLETIQ">
+      <DashboardWorkspace dashboard={dashboard} />
+    </AppShell>
   );
 }
