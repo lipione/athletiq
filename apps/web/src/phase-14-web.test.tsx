@@ -73,4 +73,15 @@ describe('phase 14 enterprise web product', () => {
     expect(markup).toContain('Access denied');
     expect(markup).not.toContain('ATH-NP-2026-000510');
   });
+
+  it('renders the live super admin console entry points', async () => {
+    const { SuperAdminConsole } = await import('./components/live/super-admin-console.js');
+
+    const markup = renderToStaticMarkup(<SuperAdminConsole />);
+
+    expect(markup).toContain('Live backend console');
+    expect(markup).toContain('API docs');
+    expect(markup).toContain('School Onboarding');
+    expect(markup).toContain('Tournament Setup');
+  });
 });

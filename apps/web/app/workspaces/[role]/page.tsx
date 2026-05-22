@@ -1,6 +1,7 @@
 import { AppShell } from '../../../src/components/phase14/app-shell.js';
 import { DashboardWorkspace } from '../../../src/components/phase14/dashboard-workspace.js';
 import { ErrorState } from '../../../src/components/phase14/state.js';
+import { SuperAdminConsole } from '../../../src/components/live/super-admin-console.js';
 import {
   getDashboardSnapshot,
   type RoleSlug,
@@ -38,7 +39,11 @@ export default async function WorkspacePage({ params }: WorkspacePageProps) {
 
   return (
     <AppShell activeRole={roleSlug} eyebrow={dashboard.eyebrow} title={dashboard.label}>
-      <DashboardWorkspace dashboard={dashboard} />
+      {roleSlug === 'super-admin' ? (
+        <SuperAdminConsole />
+      ) : (
+        <DashboardWorkspace dashboard={dashboard} />
+      )}
     </AppShell>
   );
 }

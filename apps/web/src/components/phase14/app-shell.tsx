@@ -1,4 +1,12 @@
-import { Activity, BadgeCheck, Building2, ClipboardList, Globe2, Landmark } from 'lucide-react';
+import {
+  Activity,
+  BadgeCheck,
+  BookOpen,
+  Building2,
+  ClipboardList,
+  Globe2,
+  Landmark,
+} from 'lucide-react';
 import type { ReactNode } from 'react';
 import { getWorkspaceLinks, type RoleSlug } from '../../lib/phase14-data.js';
 
@@ -57,6 +65,10 @@ export function AppShell({ activeRole, children, eyebrow, title }: AppShellProps
         >
           <Globe2 aria-hidden="true" size={18} />
           <span>Public tournament</span>
+        </a>
+        <a className="nav-link" href="http://localhost:4000/api/docs" target="_blank">
+          <BookOpen aria-hidden="true" size={18} />
+          <span>API docs</span>
         </a>
       </aside>
       <div className="workspace">
