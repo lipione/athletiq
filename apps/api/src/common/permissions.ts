@@ -2,6 +2,7 @@ import type { UserRole } from './roles.js';
 
 export const rolePermissions = {
   super_admin: [
+    'users.manage',
     'support.impersonate',
     'analytics.read',
     'analytics.export',

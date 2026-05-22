@@ -487,6 +487,49 @@ textarea {
   justify-content: flex-end;
 }
 
+.bracket-console {
+  display: grid;
+  gap: 16px;
+}
+
+.bracket-console__status {
+  margin: 0;
+}
+
+.bracket-console__grid,
+.bracket-console__view {
+  align-items: start;
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(280px, 0.8fr) minmax(0, 1.2fr);
+}
+
+.bracket-console__controls,
+.bracket-console__table-block {
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+}
+
+.bracket-console__check {
+  align-items: center !important;
+  display: flex !important;
+  flex-direction: row;
+}
+
+.bracket-console__table {
+  min-width: 760px;
+}
+
+.bracket-console__table .live-input {
+  min-height: 36px;
+  min-width: 110px;
+  padding: 7px 9px;
+}
+
+.bracket-console__team-list li {
+  min-height: 54px;
+}
+
 .table-scroll {
   overflow-x: auto;
 }
@@ -903,6 +946,8 @@ tr:last-child td {
   .passport-grid,
   .quick-links,
   .two-column,
+  .bracket-console__grid,
+  .bracket-console__view,
   .bracket-grid {
     grid-template-columns: 1fr;
   }

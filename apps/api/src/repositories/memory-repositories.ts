@@ -89,6 +89,10 @@ export class MemoryUserRepository implements UserRepository {
     return this.data.createUser(input);
   }
 
+  list() {
+    return this.data.listUsers();
+  }
+
   findById(userId: string) {
     return this.data.getUserById(userId);
   }

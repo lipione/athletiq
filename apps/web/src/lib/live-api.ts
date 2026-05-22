@@ -40,6 +40,26 @@ const headersFor = (options: LiveApiOptions = {}) => {
   return headers;
 };
 
+const isFormDataBody = (body: RequestInit['body']) =>
+  typeof FormData !== 'undefined' && body instanceof FormData;
+
+const normalizeHeaders = (headers: HeadersInit | undefined): Record<string, string> => {
+  if (!headers) {
+    return {};
+  }
+  if (Array.isArray(headers)) {
+    return Object.fromEntries(headers);
+  }
+  if (typeof (headers as Headers).forEach === 'function') {
+    const normalized: Record<string, string> = {};
+    (headers as Headers).forEach((value, key) => {
+      normalized[key] = value;
+    });
+    return normalized;
+  }
+  return headers as Record<string, string>;
+};
+
 export class LiveApiError extends Error {
   constructor(
     message: string,
@@ -55,12 +75,17 @@ export async function liveApiRequest<T>(
   init: RequestInit = {},
   options: LiveApiOptions = {},
 ): Promise<T> {
+  const headers: Record<string, string> = {
+    ...headersFor(options),
+    ...normalizeHeaders(init.headers),
+  };
+  if (isFormDataBody(init.body)) {
+    delete headers['Content-Type'];
+  }
+
   const response = await fetch(`${liveApiBaseUrl()}${path}`, {
     ...init,
-    headers: {
-      ...headersFor(options),
-      ...(init.headers ?? {}),
-    },
+    headers,
   });
   const contentType = response.headers.get('content-type') ?? '';
   const payload = contentType.includes('application/json')
@@ -81,4 +106,9 @@ export async function liveApiRequest<T>(
 export const jsonBody = (value: unknown): RequestInit => ({
   method: 'POST',
   body: JSON.stringify(value),
+});
+
+export const multipartBody = (value: FormData): RequestInit => ({
+  method: 'POST',
+  body: value,
 });

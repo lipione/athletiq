@@ -72,6 +72,25 @@ export class AuthController {
     return user;
   }
 
+  @Get('users')
+  @Roles('super_admin')
+  @Permissions('users.manage')
+  listUsers(@CurrentUser() actor: AuthenticatedUser) {
+    return this.authService.listUsers(actor);
+  }
+
+  @Post('users')
+  @Roles('super_admin')
+  @Permissions('users.manage')
+  @RateLimit('auth.users.provision', 20, 60)
+  @HttpCode(201)
+  provisionUser(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Body() body: { email?: string; password?: string; roles?: UserRole[]; schoolIds?: string[] },
+  ) {
+    return this.authService.provisionUser(actor, body);
+  }
+
   @Post('impersonation')
   @Roles('super_admin')
   @Permissions('support.impersonate')

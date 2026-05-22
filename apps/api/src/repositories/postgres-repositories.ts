@@ -1288,6 +1288,12 @@ export class PostgresUserRepository extends PostgresRepositoryBase implements Us
     return this.mapUser(this.expectReturned(created, 'user.create'));
   }
 
+  async list() {
+    const rows = await this.db.select().from(users);
+    const mapped = await Promise.all(rows.map((row) => this.mapUserWithMemberships(row)));
+    return mapped.sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+  }
+
   async findById(userId: string) {
     if (userId === DEFAULT_USER_ID) {
       await this.ensureDefaultSuperAdmin();

@@ -81,8 +81,118 @@ describe('phase 14 enterprise web product', () => {
 
     expect(markup).toContain('Live backend console');
     expect(markup).toContain('API docs');
+    expect(markup).toContain('Platform Users');
+    expect(markup).toContain('Provision user');
     expect(markup).toContain('School Onboarding');
     expect(markup).toContain('Tournament Setup');
+    expect(markup).toContain('Tournament Operations Command Center');
+    expect(markup).toContain('Pending Verification');
+    expect(markup).toContain('Bracket Operations');
+  });
+
+  it('renders the live bracket operations console from an API-shaped bracket view', async () => {
+    const { BracketConsole } = await import('./components/live/bracket-console.js');
+
+    const markup = renderToStaticMarkup(
+      <BracketConsole
+        initialTournaments={[
+          {
+            id: 'tournament-1',
+            name: 'Bracket Cup',
+            sport: 'football',
+            format: 'knockout',
+            status: 'approved',
+          },
+        ]}
+        initialView={{
+          bracket: {
+            id: 'bracket-1',
+            tournamentId: 'tournament-1',
+            format: 'single_elimination',
+            status: 'draft',
+            activeVersionId: 'version-1',
+            createdBy: 'usr_super_admin',
+            createdAt: '2026-05-22T08:00:00.000Z',
+            updatedAt: '2026-05-22T08:00:00.000Z',
+          },
+          version: {
+            id: 'version-1',
+            bracketId: 'bracket-1',
+            versionNumber: 1,
+            status: 'draft',
+            generationPolicy: 'initial',
+            createdBy: 'usr_super_admin',
+            createdAt: '2026-05-22T08:00:00.000Z',
+          },
+          seeds: [
+            {
+              id: 'seed-1',
+              bracketId: 'bracket-1',
+              versionId: 'version-1',
+              teamId: 'team-1',
+              seedNumber: 1,
+              groupKey: 'A',
+              locked: true,
+              withdrawn: false,
+              createdAt: '2026-05-22T08:00:00.000Z',
+              updatedAt: '2026-05-22T08:00:00.000Z',
+            },
+          ],
+          nodes: [
+            {
+              id: 'node-1',
+              bracketId: 'bracket-1',
+              versionId: 'version-1',
+              matchId: 'match-1',
+              groupKey: 'A',
+              round: 1,
+              position: 1,
+              bracketSide: 'main',
+              homeTeamId: 'team-1',
+              awayTeamId: 'team-2',
+              homeSeedNumber: 1,
+              awaySeedNumber: 2,
+              sourceNodeIds: [],
+              status: 'scheduled',
+              createdAt: '2026-05-22T08:00:00.000Z',
+              updatedAt: '2026-05-22T08:00:00.000Z',
+            },
+          ],
+          standings: [
+            {
+              id: 'standing-1',
+              bracketId: 'bracket-1',
+              versionId: 'version-1',
+              groupKey: 'A',
+              teamId: 'team-1',
+              played: 1,
+              wins: 1,
+              draws: 0,
+              losses: 0,
+              points: 3,
+              goalsFor: 2,
+              goalsAgainst: 0,
+              goalDifference: 2,
+              disciplinaryPoints: 0,
+              headToHeadPoints: 3,
+              rank: 1,
+              updatedAt: '2026-05-22T08:00:00.000Z',
+            },
+          ],
+          teams: [{ id: 'team-1', name: 'Team One', schoolId: 'school-1' }],
+        }}
+      />,
+    );
+
+    expect(markup).toContain('Bracket Operations');
+    expect(markup).toContain('Create / Generate');
+    expect(markup).toContain('Update seeds');
+    expect(markup).toContain('Publish');
+    expect(markup).toContain('Regenerate');
+    expect(markup).toContain('Fetch view');
+    expect(markup).toContain('Team One');
+    expect(markup).toContain('Round 1');
+    expect(markup).toContain('Standings');
   });
 
   it('renders the live school admin console entry points', async () => {
@@ -94,6 +204,23 @@ describe('phase 14 enterprise web product', () => {
     expect(markup).toContain('Register School Admin');
     expect(markup).toContain('Create athlete draft');
     expect(markup).toContain('Tournament Registration');
+    expect(markup).toContain('Document Verification');
+  });
+
+  it('renders the OCR document review workspace controls without a live backend', async () => {
+    const { DocumentReviewConsole } = await import('./components/live/document-review-console.js');
+
+    const markup = renderToStaticMarkup(<DocumentReviewConsole requestOptions={{}} />);
+
+    expect(markup).toContain('Document Verification');
+    expect(markup).toContain('Athlete ID');
+    expect(markup).toContain('OCR Preview');
+    expect(markup).toContain('Upload and extract');
+    expect(markup).toContain('Review Queue');
+    expect(markup).toContain('Expiring Documents');
+    expect(markup).toContain('Approve');
+    expect(markup).toContain('Request correction');
+    expect(markup).toContain('Reject');
   });
 
   it('renders the live coach and referee console entry points', async () => {
@@ -114,6 +241,7 @@ describe('phase 14 enterprise web product', () => {
     const governmentMarkup = renderToStaticMarkup(<AnalyticsConsole mode="government" />);
 
     expect(federationMarkup).toContain('Live federation workspace');
+    expect(federationMarkup).toContain('Analytics Login');
     expect(federationMarkup).toContain('Federation Rankings');
     expect(federationMarkup).toContain('Draft report');
     expect(governmentMarkup).toContain('Live government intelligence workspace');

@@ -112,6 +112,142 @@ describe('phase 9 auth security', () => {
     await app.close();
   });
 
+  it('allows super admins to provision platform role users without leaking password material', async () => {
+    delete process.env.ATHLETIQ_DATA_BACKEND;
+    const app = await createApp();
+    const api = request(app.getHttpServer());
+    const federationEmail = `federation_${Date.now()}_${Math.random().toString(36).slice(2)}@athletiq.local`;
+    const governmentEmail = `government_${Date.now()}_${Math.random().toString(36).slice(2)}@athletiq.local`;
+    const schoolAdminEmail = `school_user_blocked_${Date.now()}_${Math.random().toString(36).slice(2)}@athletiq.local`;
+
+    await api
+      .post('/api/auth/register')
+      .send({ email: federationEmail, password: 'password123', role: 'federation_admin' })
+      .expect(403);
+    await api
+      .post('/api/auth/register')
+      .send({ email: governmentEmail, password: 'password123', role: 'government_viewer' })
+      .expect(403);
+    await api
+      .post('/api/auth/register')
+      .send({ email: `super_${federationEmail}`, password: 'password123', role: 'super_admin' })
+      .expect(403);
+
+    const schoolAdmin = await api
+      .post('/api/auth/register')
+      .send({ email: schoolAdminEmail, password: 'password123', role: 'school_admin' })
+      .expect(201);
+    await api
+      .post('/api/auth/users')
+      .set({
+        'x-athletiq-user-id': schoolAdmin.body.user.id,
+        'x-athletiq-user-role': 'school_admin',
+      })
+      .send({ email: federationEmail, roles: ['federation_admin'] })
+      .expect(403);
+    await api
+      .get('/api/auth/users')
+      .set({
+        'x-athletiq-user-id': schoolAdmin.body.user.id,
+        'x-athletiq-user-role': 'school_admin',
+      })
+      .expect(403);
+
+    const provisionedFederation = await api
+      .post('/api/auth/users')
+      .set({ 'x-athletiq-user-id': 'usr_super_admin', 'x-athletiq-user-role': 'super_admin' })
+      .send({ email: federationEmail, roles: ['federation_admin'] })
+      .expect(201);
+    expect(provisionedFederation.body).toMatchObject({
+      user: {
+        email: federationEmail,
+        roles: ['federation_admin'],
+        schoolIds: [],
+      },
+      temporaryPassword: expect.any(String),
+    });
+    expect(provisionedFederation.body.user.password).toBeUndefined();
+    expect(provisionedFederation.body.user.passwordHash).toBeUndefined();
+
+    const whitespacePassword = await api
+      .post('/api/auth/users')
+      .set({ 'x-athletiq-user-id': 'usr_super_admin', 'x-athletiq-user-role': 'super_admin' })
+      .send({
+        email: `whitespace_${federationEmail}`,
+        password: '   ',
+        roles: ['government_viewer'],
+      })
+      .expect(201);
+    expect(whitespacePassword.body.temporaryPassword).toEqual(expect.any(String));
+    await api
+      .post('/api/auth/login')
+      .send({
+        email: `whitespace_${federationEmail}`,
+        password: whitespacePassword.body.temporaryPassword,
+      })
+      .expect(201);
+
+    await api
+      .post('/api/auth/users')
+      .set({ 'x-athletiq-user-id': 'usr_super_admin', 'x-athletiq-user-role': 'super_admin' })
+      .send({
+        email: governmentEmail,
+        password: 'password123',
+        roles: ['government_viewer'],
+        schoolIds: ['school_public_reports'],
+      })
+      .expect(201);
+
+    await api
+      .post('/api/auth/login')
+      .send({ email: federationEmail, password: provisionedFederation.body.temporaryPassword })
+      .expect(201);
+    await api
+      .post('/api/auth/login')
+      .send({ email: governmentEmail, password: 'password123' })
+      .expect(201);
+
+    const users = await api
+      .get('/api/auth/users')
+      .set({ 'x-athletiq-user-id': 'usr_super_admin', 'x-athletiq-user-role': 'super_admin' })
+      .expect(200);
+    expect(users.body).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          email: federationEmail,
+          roles: ['federation_admin'],
+        }),
+        expect.objectContaining({
+          email: governmentEmail,
+          roles: ['government_viewer'],
+          schoolIds: ['school_public_reports'],
+        }),
+      ]),
+    );
+    expect(users.body.some((user: Record<string, unknown>) => 'password' in user)).toBe(false);
+    expect(users.body.some((user: Record<string, unknown>) => 'passwordHash' in user)).toBe(false);
+
+    const audit = await api
+      .get('/api/audit')
+      .set({ 'x-athletiq-user-id': 'usr_super_admin', 'x-athletiq-user-role': 'super_admin' })
+      .expect(200);
+    expect(audit.body).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          actorUserId: 'usr_super_admin',
+          action: 'auth.user_provisioned',
+          resource: 'user',
+          metadata: expect.objectContaining({
+            email: federationEmail,
+            roles: 'federation_admin',
+          }),
+        }),
+      ]),
+    );
+
+    await app.close();
+  });
+
   it('migrates legacy plaintext passwords to Argon2 after a successful login', async () => {
     delete process.env.ATHLETIQ_DATA_BACKEND;
     const app = await createApp();

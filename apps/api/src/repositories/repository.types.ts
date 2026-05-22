@@ -142,6 +142,7 @@ export type CreateUserInput = {
 
 export interface UserRepository {
   create(input: CreateUserInput): Promise<UserRecord>;
+  list(): Promise<UserRecord[]>;
   findById(userId: string): Promise<UserRecord | undefined>;
   findByEmail(email: string): Promise<UserRecord | undefined>;
   updatePassword(userId: string, passwordHash: string): Promise<UserRecord>;

@@ -6,7 +6,8 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { type UserRecord } from '../common/store.js';
+import { randomBytes } from 'crypto';
+import { type AuthenticatedUser, type UserRecord } from '../common/store.js';
 import {
   publicRegisterRoles,
   userRoles,
@@ -40,12 +41,24 @@ type ImpersonationInput = {
   reason?: string;
 };
 
+type ProvisionUserInput = {
+  email?: string;
+  password?: unknown;
+  roles?: unknown;
+  schoolIds?: unknown;
+};
+
 export type AuthResult = {
   user: Omit<UserRecord, 'password'>;
   accessToken?: string;
   refreshToken?: string;
   refreshMaxAgeSeconds?: number;
   impersonatedBy?: string;
+};
+
+export type ProvisionUserResult = {
+  user: Omit<UserRecord, 'password'>;
+  temporaryPassword?: string;
 };
 
 @Injectable()
@@ -138,6 +151,58 @@ export class AuthService {
     return { ok: true };
   }
 
+  async listUsers(actor: AuthenticatedUser) {
+    this.assertCanManageUsers(actor);
+    const users = await this.users.list();
+    return users.map((user) => this.toPublicUser(user));
+  }
+
+  async provisionUser(
+    actor: AuthenticatedUser,
+    input: ProvisionUserInput,
+  ): Promise<ProvisionUserResult> {
+    this.assertCanManageUsers(actor);
+
+    const email = input.email?.trim().toLowerCase();
+    if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
+      throw new BadRequestException('invalid email');
+    }
+
+    const roles = this.normalizeProvisionedRoles(input.roles);
+    const providedPassword = this.normalizeOptionalPassword(input.password);
+    const generatedPassword = !providedPassword;
+    const password = providedPassword || this.generateTemporaryPassword();
+    if (password.length < 8) {
+      throw new BadRequestException('password must be at least 8 characters');
+    }
+
+    const schoolIds = this.normalizeSchoolIds(input.schoolIds);
+    const user = await this.users.create({
+      email,
+      passwordHash: await this.passwords.hashPassword(password),
+      roles,
+      schoolIds,
+    });
+
+    await this.audit.record({
+      tenantId: schoolIds[0] ?? 'platform',
+      actorUserId: actor.id,
+      action: 'auth.user_provisioned',
+      resource: 'user',
+      resourceId: user.id,
+      metadata: {
+        email: user.email,
+        roles: roles.join(','),
+        schoolIds: schoolIds.join(','),
+      },
+    });
+
+    return {
+      user: this.toPublicUser(user),
+      ...(generatedPassword ? { temporaryPassword: password } : {}),
+    };
+  }
+
   async impersonate(
     actor: { id: string; role: UserRole },
     input: ImpersonationInput,
@@ -183,6 +248,68 @@ export class AuthService {
       accessToken: await this.tokens.signAccessToken(publicUser, targetRole, actor.id),
       impersonatedBy: actor.id,
     };
+  }
+
+  private assertCanManageUsers(actor: AuthenticatedUser) {
+    if (actor.role !== 'super_admin') {
+      throw new ForbiddenException('Only super admins can manage users');
+    }
+  }
+
+  private normalizeProvisionedRoles(roles: unknown) {
+    if (!Array.isArray(roles)) {
+      throw new BadRequestException('roles must be an array');
+    }
+
+    const normalized = [
+      ...new Set(
+        roles
+          .filter((role): role is string => typeof role === 'string')
+          .map((role) => role.trim() as UserRole),
+      ),
+    ];
+    if (normalized.length === 0) {
+      throw new BadRequestException('at least one role is required');
+    }
+
+    const invalidRole = normalized.find((role) => !userRoles.includes(role));
+    if (invalidRole) {
+      throw new BadRequestException(`Invalid role: ${invalidRole}`);
+    }
+
+    return normalized;
+  }
+
+  private normalizeSchoolIds(schoolIds: unknown) {
+    if (schoolIds === undefined) {
+      return [];
+    }
+    if (!Array.isArray(schoolIds)) {
+      throw new BadRequestException('schoolIds must be an array');
+    }
+
+    return [
+      ...new Set(
+        schoolIds
+          .filter((schoolId): schoolId is string => typeof schoolId === 'string')
+          .map((schoolId) => schoolId.trim())
+          .filter(Boolean),
+      ),
+    ];
+  }
+
+  private normalizeOptionalPassword(password: unknown) {
+    if (password === undefined) {
+      return undefined;
+    }
+    if (typeof password !== 'string') {
+      throw new BadRequestException('password must be a string');
+    }
+    return password.trim() || undefined;
+  }
+
+  private generateTemporaryPassword() {
+    return `ATQ-${randomBytes(9).toString('hex')}`;
   }
 
   private toPublicUser(user: UserRecord): Omit<UserRecord, 'password'> {

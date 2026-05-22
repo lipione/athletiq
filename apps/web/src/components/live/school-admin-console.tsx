@@ -23,6 +23,7 @@ import {
   type LiveApiSession,
 } from '../../lib/live-api.js';
 import { StatusBadge } from '../phase14/status-badge.js';
+import { DocumentReviewConsole } from './document-review-console.js';
 
 type HealthStatus = {
   status: string;
@@ -631,6 +632,8 @@ export function SchoolAdminConsole() {
           )}
         />
       </section>
+
+      <DocumentReviewConsole requestOptions={requestOptions} />
 
       <LiveList
         empty="No approved tournaments are available yet. Create and approve one from Super Admin."

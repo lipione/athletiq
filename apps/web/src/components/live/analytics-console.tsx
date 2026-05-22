@@ -9,13 +9,19 @@ import {
   ClipboardList,
   Database,
   FileText,
+  LogIn,
   RefreshCw,
   ShieldCheck,
   Trophy,
   Users,
 } from 'lucide-react';
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
-import { jsonBody, liveApiBaseUrl, liveApiRequest } from '../../lib/live-api.js';
+import {
+  jsonBody,
+  liveApiBaseUrl,
+  liveApiRequest,
+  type LiveApiSession,
+} from '../../lib/live-api.js';
 import { StatusBadge } from '../phase14/status-badge.js';
 
 type AnalyticsMode = 'federation' | 'government';
@@ -108,6 +114,11 @@ type ReportDraft = {
   sections?: Array<{ title: string }>;
 };
 
+type LoginResponse = {
+  user: NonNullable<LiveApiSession['user']>;
+  accessToken: string;
+};
+
 type AnalyticsState = {
   overview?: Overview;
   participation?: Participation;
@@ -127,13 +138,28 @@ const emptyState: AnalyticsState = {
 };
 
 export function AnalyticsConsole({ mode }: { mode: AnalyticsMode }) {
+  const sessionKey = `athletiq.live.analytics.${mode}.session`;
+  const [session, setSession] = useState<LiveApiSession>({});
   const [data, setData] = useState<AnalyticsState>(emptyState);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('Ready to load live analytics.');
   const [error, setError] = useState('');
   const [metric, setMetric] = useState('goals');
+  const [loginForm, setLoginForm] = useState({
+    email:
+      mode === 'government'
+        ? 'government_viewer@athletiq.local'
+        : 'federation_admin@athletiq.local',
+    password: 'password123',
+  });
 
-  const requestOptions = useMemo(() => ({ devActor: devSuperAdmin }), []);
+  const requestOptions = useMemo(
+    () => ({
+      session,
+      ...(session.accessToken ? {} : { devActor: devSuperAdmin }),
+    }),
+    [session],
+  );
   const isGovernment = mode === 'government';
   const title = isGovernment
     ? 'Live government intelligence workspace'
@@ -143,8 +169,15 @@ export function AnalyticsConsole({ mode }: { mode: AnalyticsMode }) {
     : 'Federation oversight for participation, rankings, exports, and AI report draft review.';
 
   useEffect(() => {
+    const saved = window.localStorage.getItem(sessionKey);
+    if (saved) {
+      setSession(JSON.parse(saved) as LiveApiSession);
+    }
+  }, [sessionKey]);
+
+  useEffect(() => {
     void refreshData();
-  }, [metric]);
+  }, [metric, session.accessToken]);
 
   const runAction = async (label: string, action: () => Promise<void>) => {
     setBusy(true);
@@ -173,7 +206,9 @@ export function AnalyticsConsole({ mode }: { mode: AnalyticsMode }) {
           liveApiRequest<Quality>('/analytics/data-quality', {}, requestOptions),
           liveApiRequest<Readiness>('/health/readiness', {}, requestOptions),
           liveApiRequest<Tournament[]>('/tournaments', {}, requestOptions),
-          liveApiRequest<DataProducts>('/analytics/data-products/exports', {}, requestOptions),
+          isGovernment
+            ? Promise.resolve({ exports: [] })
+            : liveApiRequest<DataProducts>('/analytics/data-products/exports', {}, requestOptions),
         ]);
       setData((current) => ({
         ...current,
@@ -218,6 +253,24 @@ export function AnalyticsConsole({ mode }: { mode: AnalyticsMode }) {
       );
       setData((current) => ({ ...current, reportDraft }));
     });
+  };
+
+  const login = async () => {
+    await runAction('Logged in with analytics bearer token.', async () => {
+      const result = await liveApiRequest<LoginResponse>(
+        '/auth/login',
+        jsonBody({ email: loginForm.email, password: loginForm.password }),
+      );
+      const nextSession = { user: result.user, accessToken: result.accessToken };
+      window.localStorage.setItem(sessionKey, JSON.stringify(nextSession));
+      setSession(nextSession);
+    });
+  };
+
+  const clearSession = () => {
+    window.localStorage.removeItem(sessionKey);
+    setSession({});
+    setNotice('Session cleared. Using dev super admin headers again.');
   };
 
   return (
@@ -266,7 +319,7 @@ export function AnalyticsConsole({ mode }: { mode: AnalyticsMode }) {
       <section className="live-status-bar" aria-live="polite">
         <div>
           <ShieldCheck aria-hidden="true" size={18} />
-          <span>Dev analytics actor</span>
+          <span>{session.user?.email ?? 'Dev analytics actor'}</span>
         </div>
         <div>
           <Activity aria-hidden="true" size={18} />
@@ -283,6 +336,49 @@ export function AnalyticsConsole({ mode }: { mode: AnalyticsMode }) {
             <span>{notice}</span>
           </div>
         )}
+      </section>
+
+      <section className="ops-panel live-form">
+        <div className="section-heading">
+          <div>
+            <h2>Analytics Login</h2>
+            <p>Use provisioned federation or government accounts for bearer-token access.</p>
+          </div>
+        </div>
+        <div className="bracket-console__grid">
+          <label>
+            Email
+            <input
+              className="live-input"
+              onChange={(event) => setLoginForm({ ...loginForm, email: event.target.value })}
+              type="email"
+              value={loginForm.email}
+            />
+          </label>
+          <label>
+            Password
+            <input
+              className="live-input"
+              onChange={(event) => setLoginForm({ ...loginForm, password: event.target.value })}
+              type="password"
+              value={loginForm.password}
+            />
+          </label>
+          <div className="live-action-group">
+            <button
+              className="primary-action"
+              disabled={busy}
+              onClick={() => void login()}
+              type="button"
+            >
+              <LogIn aria-hidden="true" size={18} />
+              Login
+            </button>
+            <button className="icon-button" onClick={clearSession} type="button">
+              Clear
+            </button>
+          </div>
+        </div>
       </section>
 
       <section className="metric-strip">

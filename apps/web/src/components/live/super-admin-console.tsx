@@ -5,8 +5,10 @@ import {
   BadgeCheck,
   BookOpen,
   Building2,
+  CalendarCheck,
   CircleAlert,
   ClipboardList,
+  Flag,
   LogIn,
   Plus,
   RefreshCw,
@@ -21,6 +23,7 @@ import {
   type LiveApiSession,
 } from '../../lib/live-api.js';
 import { StatusBadge } from '../phase14/status-badge.js';
+import { BracketConsole } from './bracket-console.js';
 
 type HealthStatus = {
   status: string;
@@ -50,12 +53,33 @@ type Tournament = {
   registeredSchoolIds?: string[];
 };
 
+type Match = {
+  id: string;
+  tournamentId: string;
+  homeTeamId: string;
+  awayTeamId: string;
+  scheduledAt: string;
+  status: string;
+  homeScore?: number;
+  awayScore?: number;
+  submittedAt?: string;
+  verifiedAt?: string;
+};
+
 type AuditLog = {
   id: string;
   actorUserId: string;
   action: string;
   resource: string;
   resourceId: string;
+  createdAt: string;
+};
+
+type UserSummary = {
+  id: string;
+  email: string;
+  roles: string[];
+  schoolIds: string[];
   createdAt: string;
 };
 
@@ -68,11 +92,18 @@ type LoginResponse = {
   accessToken: string;
 };
 
+type ProvisionUserResponse = {
+  user: UserSummary;
+  temporaryPassword?: string;
+};
+
 type LoadState = {
   health?: HealthStatus;
   readiness?: ReadinessStatus;
+  users: UserSummary[];
   schools: School[];
   tournaments: Tournament[];
+  matches: Match[];
   audit: AuditLog[];
 };
 
@@ -80,8 +111,10 @@ const devSuperAdmin = { id: 'usr_super_admin', role: 'super_admin' };
 const sessionKey = 'athletiq.live.console.session';
 
 const emptyState: LoadState = {
+  users: [],
   schools: [],
   tournaments: [],
+  matches: [],
   audit: [],
 };
 
@@ -108,6 +141,13 @@ export function SuperAdminConsole() {
     password: 'password123',
     role: 'school_admin',
   });
+  const [provisionForm, setProvisionForm] = useState({
+    email: `federation_${Date.now()}@athletiq.local`,
+    password: '',
+    role: 'federation_admin',
+    schoolIds: '',
+  });
+  const [temporaryPassword, setTemporaryPassword] = useState('');
 
   const requestOptions = useMemo(
     () => ({
@@ -145,14 +185,16 @@ export function SuperAdminConsole() {
 
   const refreshData = async () => {
     await runAction('Live API data refreshed.', async () => {
-      const [health, readiness, schools, tournaments, audit] = await Promise.all([
+      const [health, readiness, schools, tournaments, matches, audit] = await Promise.all([
         liveApiRequest<HealthStatus>('/health', {}, requestOptions),
         liveApiRequest<ReadinessStatus>('/health/readiness', {}, requestOptions),
         liveApiRequest<School[]>('/schools', {}, requestOptions),
         liveApiRequest<Tournament[]>('/tournaments', {}, requestOptions),
+        liveApiRequest<Match[]>('/matches', {}, requestOptions),
         liveApiRequest<AuditLog[]>('/audit', {}, requestOptions),
       ]);
-      setData({ health, readiness, schools, tournaments, audit });
+      const users = await liveApiRequest<UserSummary[]>('/auth/users', {}, requestOptions);
+      setData({ health, readiness, users, schools, tournaments, matches, audit });
     });
   };
 
@@ -186,6 +228,32 @@ export function SuperAdminConsole() {
     window.localStorage.removeItem(sessionKey);
     setSession({});
     setNotice('Session cleared. Using dev super admin headers again.');
+  };
+
+  const provisionUser = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    await runAction('Platform role user provisioned.', async () => {
+      const result = await liveApiRequest<ProvisionUserResponse>(
+        '/auth/users',
+        jsonBody({
+          email: provisionForm.email,
+          ...(provisionForm.password ? { password: provisionForm.password } : {}),
+          roles: [provisionForm.role],
+          schoolIds: provisionForm.schoolIds
+            .split(',')
+            .map((schoolId) => schoolId.trim())
+            .filter(Boolean),
+        }),
+        requestOptions,
+      );
+      setTemporaryPassword(result.temporaryPassword ?? provisionForm.password);
+      setProvisionForm({
+        ...provisionForm,
+        email: `${provisionForm.role}_${Date.now()}@athletiq.local`,
+        password: '',
+      });
+      await refreshData();
+    });
   };
 
   const createSchool = async (event: FormEvent<HTMLFormElement>) => {
@@ -233,10 +301,20 @@ export function SuperAdminConsole() {
     });
   };
 
+  const verifyMatch = async (matchId: string) => {
+    await runAction('Match verified and downstream bracket state updated.', async () => {
+      await liveApiRequest<Match>(`/matches/${matchId}/verify`, { method: 'POST' }, requestOptions);
+      await refreshData();
+    });
+  };
+
   const approvedSchools = data.schools.filter((school) => school.status === 'approved').length;
   const approvedTournaments = data.tournaments.filter(
     (tournament) => tournament.status === 'approved',
   ).length;
+  const pendingVerification = data.matches.filter((match) => match.status === 'played');
+  const scheduledMatches = data.matches.filter((match) => match.status === 'scheduled').length;
+  const verifiedMatches = data.matches.filter((match) => match.status === 'verified').length;
 
   return (
     <div className="stack">
@@ -316,6 +394,91 @@ export function SuperAdminConsole() {
           <strong>{data.audit.length}</strong>
           <p>Newest platform actions</p>
         </article>
+      </section>
+
+      <section className="two-column">
+        <form className="ops-panel live-form" onSubmit={provisionUser}>
+          <div className="section-heading">
+            <div>
+              <h2>Platform Users</h2>
+              <p>Provision federation, government, and operations accounts.</p>
+            </div>
+          </div>
+          <label>
+            Email
+            <input
+              className={inputClassName}
+              onChange={(event) =>
+                setProvisionForm({ ...provisionForm, email: event.target.value })
+              }
+              type="email"
+              value={provisionForm.email}
+            />
+          </label>
+          <label>
+            Role
+            <select
+              className={inputClassName}
+              onChange={(event) => setProvisionForm({ ...provisionForm, role: event.target.value })}
+              value={provisionForm.role}
+            >
+              <option value="federation_admin">Federation admin</option>
+              <option value="government_viewer">Government viewer</option>
+              <option value="super_admin">Super admin</option>
+              <option value="school_admin">School admin</option>
+              <option value="coach">Coach</option>
+              <option value="referee">Referee</option>
+            </select>
+          </label>
+          <label>
+            Temporary password
+            <input
+              className={inputClassName}
+              onChange={(event) =>
+                setProvisionForm({ ...provisionForm, password: event.target.value })
+              }
+              placeholder="Generated if blank"
+              type="password"
+              value={provisionForm.password}
+            />
+          </label>
+          <label>
+            School IDs
+            <input
+              className={inputClassName}
+              onChange={(event) =>
+                setProvisionForm({ ...provisionForm, schoolIds: event.target.value })
+              }
+              placeholder="Optional comma-separated IDs"
+              value={provisionForm.schoolIds}
+            />
+          </label>
+          <button className="primary-action" disabled={busy} type="submit">
+            <ShieldCheck aria-hidden="true" size={18} />
+            Provision user
+          </button>
+          {temporaryPassword ? (
+            <p className="live-help-text">One-time password: {temporaryPassword}</p>
+          ) : null}
+        </form>
+
+        <LiveList
+          empty="No platform users have been provisioned yet."
+          items={data.users}
+          title="Role Users"
+          render={(user) => (
+            <>
+              <span>
+                <strong>{user.email}</strong>
+                <small>{user.roles.join(', ')}</small>
+              </span>
+              <span className="live-row__actions">
+                <StatusBadge status={user.roles.includes('super_admin') ? 'ready' : 'review'} />
+                <small>{user.schoolIds.length} schools</small>
+              </span>
+            </>
+          )}
+        />
       </section>
 
       <section className="two-column">
@@ -466,6 +629,62 @@ export function SuperAdminConsole() {
           </ul>
         </div>
       </section>
+
+      <section className="two-column">
+        <div className="ops-panel">
+          <div className="section-heading">
+            <div>
+              <h2>Tournament Operations Command Center</h2>
+              <p>Match control, verification pressure, and scheduling state across tournaments.</p>
+            </div>
+          </div>
+          <ul className="signal-list signal-list--success">
+            <li>
+              <CalendarCheck aria-hidden="true" size={18} />
+              <span>{scheduledMatches} scheduled matches waiting for kickoff</span>
+            </li>
+            <li>
+              <Flag aria-hidden="true" size={18} />
+              <span>{pendingVerification.length} pending verification after score submission</span>
+            </li>
+            <li>
+              <BadgeCheck aria-hidden="true" size={18} />
+              <span>{verifiedMatches} verified matches feeding rankings and brackets</span>
+            </li>
+          </ul>
+        </div>
+
+        <LiveList
+          empty="No match sheets are pending super-admin verification."
+          items={pendingVerification.slice(0, 8)}
+          title="Pending Verification"
+          render={(match) => (
+            <>
+              <span>
+                <strong>
+                  {match.homeTeamId} vs {match.awayTeamId}
+                </strong>
+                <small>
+                  {match.tournamentId} · {match.homeScore ?? '-'} - {match.awayScore ?? '-'}
+                </small>
+              </span>
+              <span className="live-row__actions">
+                <StatusBadge status={match.status} />
+                <button
+                  className="icon-button"
+                  disabled={busy}
+                  onClick={() => void verifyMatch(match.id)}
+                  type="button"
+                >
+                  Verify
+                </button>
+              </span>
+            </>
+          )}
+        />
+      </section>
+
+      <BracketConsole initialTournaments={data.tournaments} requestOptions={requestOptions} />
 
       <section className="two-column">
         <LiveList

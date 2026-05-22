@@ -1,16 +1,32 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import request from 'supertest';
 import { AppModule } from '../src/app.module.js';
+import { DatabaseService } from '../src/database/database.service.js';
+
+const describeDatabase = process.env.ATHLETIQ_DATABASE_E2E === '1' ? describe : describe.skip;
 
 type Api = ReturnType<typeof request>;
 type HeaderBag = Record<string, string>;
+type Actor = { id: string; role: string };
 
-const headersFor = (user: { id: string; role: string }): HeaderBag => ({
+const headersFor = (user: Actor): HeaderBag => ({
   'x-athletiq-user-id': user.id,
   'x-athletiq-user-role': user.role,
 });
+
+const superAdmin = { id: 'usr_super_admin', role: 'super_admin' };
+const uniqueRunId = () => `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+
+const createApp = async () => {
+  const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+  const app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
+  app.setGlobalPrefix('api');
+  await app.init();
+  await app.getHttpAdapter().getInstance().ready();
+  return app;
+};
 
 const registerUser = async (api: Api, role: 'school_admin' | 'coach' = 'school_admin') => {
   const email = `phase18_${role}_${Math.random().toString(36).slice(2, 10)}@athletiq.local`;
@@ -58,14 +74,9 @@ const createAthlete = async (
 
 describe('phase 18 advanced analytics and AI report drafts', () => {
   it('publishes longitudinal analytics, rankings, quality checks, exports and approved report drafts', async () => {
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
-    const app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
-    app.setGlobalPrefix('api');
-    await app.init();
-    await app.getHttpAdapter().getInstance().ready();
+    const app = await createApp();
 
     const api = request(app.getHttpServer());
-    const superAdmin = { id: 'usr_super_admin', role: 'super_admin' };
     const schoolAdminA = await registerUser(api);
     const schoolAdminB = await registerUser(api);
     const schoolA = await createSchool(api, schoolAdminA, 'Phase 18 School A');
@@ -221,5 +232,89 @@ describe('phase 18 advanced analytics and AI report drafts', () => {
     await api.get('/api/analytics/data-quality').set(headersFor(coach)).expect(403);
 
     await app.close();
+  });
+});
+
+describeDatabase('phase 18 postgres analytics report drafts', () => {
+  const originalBackend = process.env.ATHLETIQ_DATA_BACKEND;
+
+  beforeEach(() => {
+    process.env.ATHLETIQ_DATA_BACKEND = 'postgres';
+  });
+
+  afterEach(() => {
+    if (originalBackend === undefined) {
+      delete process.env.ATHLETIQ_DATA_BACKEND;
+    } else {
+      process.env.ATHLETIQ_DATA_BACKEND = originalBackend;
+    }
+  });
+
+  it('persists approved analytics report drafts in postgres', async () => {
+    const runId = uniqueRunId();
+    const app = await createApp();
+
+    try {
+      const api = request(app.getHttpServer());
+      const draft = await api
+        .post('/api/analytics/reports/drafts')
+        .set(headersFor(superAdmin))
+        .send({ reportType: 'federation_summary', scope: `football-${runId}`, locale: 'en' })
+        .expect(201);
+
+      const approved = await api
+        .post(`/api/analytics/reports/drafts/${draft.body.id}/approve`)
+        .set(headersFor(superAdmin))
+        .send({ note: `Postgres approval ${runId}` })
+        .expect(201);
+
+      expect(approved.body).toMatchObject({
+        id: draft.body.id,
+        status: 'approved',
+        approvedBy: superAdmin.id,
+      });
+
+      const database = app.get(DatabaseService);
+      const result = await database.pool.query<{
+        id: string;
+        tenant_id: string;
+        report_type: string;
+        scope: string;
+        locale: string;
+        status: string;
+        requires_approval: boolean;
+        sections: Array<{ title: string }>;
+        created_by: string;
+        approved_by: string;
+        approval_note: string;
+        approved_at: Date | null;
+      }>(
+        `
+          SELECT id, tenant_id, report_type, scope, locale, status, requires_approval,
+                 sections, created_by, approved_by, approval_note, approved_at
+          FROM analytics_report_drafts
+          WHERE id = $1
+        `,
+        [draft.body.id],
+      );
+
+      expect(result.rows).toHaveLength(1);
+      expect(result.rows[0]).toMatchObject({
+        id: draft.body.id,
+        tenant_id: 'platform',
+        report_type: 'federation_summary',
+        scope: `football-${runId}`,
+        locale: 'en',
+        status: 'approved',
+        requires_approval: true,
+        created_by: superAdmin.id,
+        approved_by: superAdmin.id,
+        approval_note: `Postgres approval ${runId}`,
+      });
+      expect(result.rows[0]?.sections[0]?.title).toContain('Participation');
+      expect(result.rows[0]?.approved_at).toBeInstanceOf(Date);
+    } finally {
+      await app.close();
+    }
   });
 });

@@ -1219,6 +1219,16 @@ export class AppDataStore {
     });
   }
 
+  listUsers() {
+    return this.readOperation(() => {
+      return [...this.users.values()].map((user) => ({
+        ...user,
+        roles: [...user.roles],
+        schoolIds: [...user.schoolIds],
+      }));
+    });
+  }
+
   getUserByEmail(email: string) {
     return this.readOperation(() => {
       const found = [...this.users.values()].find((user) => user.email === email);
