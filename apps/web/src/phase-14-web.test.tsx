@@ -84,4 +84,15 @@ describe('phase 14 enterprise web product', () => {
     expect(markup).toContain('School Onboarding');
     expect(markup).toContain('Tournament Setup');
   });
+
+  it('renders the live school admin console entry points', async () => {
+    const { SchoolAdminConsole } = await import('./components/live/school-admin-console.js');
+
+    const markup = renderToStaticMarkup(<SchoolAdminConsole />);
+
+    expect(markup).toContain('Live school workspace');
+    expect(markup).toContain('Register School Admin');
+    expect(markup).toContain('Create athlete draft');
+    expect(markup).toContain('Tournament Registration');
+  });
 });
