@@ -5,11 +5,15 @@ import {
   athleteGuardians,
   auditLogs,
   analyticsReportDrafts,
+  announcements,
   availabilityWindows,
   bracketNodes,
   brackets,
   bracketSeeds,
   bracketVersions,
+  communicationNotifications,
+  communicationTemplates,
+  conversationThreads,
   discountCodes,
   documentDuplicateCandidates,
   documentExtractions,
@@ -20,6 +24,7 @@ import {
   facilities,
   federationOverrides,
   guardians,
+  guardianAthleteLinks,
   identityDocuments,
   invoiceInstallments,
   invoices,
@@ -27,6 +32,9 @@ import {
   matchSchedules,
   matches,
   membershipPlans,
+  messageModerationActions,
+  notificationDeliveries,
+  notificationPreferences,
   officialAssignments,
   officialPayoutExports,
   officialProfiles,
@@ -44,6 +52,7 @@ import {
   teamMembers,
   teams,
   tenants,
+  threadMessages,
   tournamentRegistrations,
   tournamentWaiverRequirements,
   tournaments,
@@ -164,6 +173,15 @@ describe('database schema exports', () => {
     expect(qrCodes).toBeDefined();
     expect(syncMutations).toBeDefined();
     expect(federationOverrides).toBeDefined();
+    expect(guardianAthleteLinks).toBeDefined();
+    expect(announcements).toBeDefined();
+    expect(notificationPreferences).toBeDefined();
+    expect(communicationTemplates).toBeDefined();
+    expect(communicationNotifications).toBeDefined();
+    expect(notificationDeliveries).toBeDefined();
+    expect(conversationThreads).toBeDefined();
+    expect(threadMessages).toBeDefined();
+    expect(messageModerationActions).toBeDefined();
     expect(analyticsReportDrafts).toBeDefined();
     expect(spreadsheetImports).toBeDefined();
     expect(partnerApiKeys).toBeDefined();
@@ -219,6 +237,15 @@ describe('database schema exports', () => {
       qrCodes,
       syncMutations,
       federationOverrides,
+      guardianAthleteLinks,
+      announcements,
+      notificationPreferences,
+      communicationTemplates,
+      communicationNotifications,
+      notificationDeliveries,
+      conversationThreads,
+      threadMessages,
+      messageModerationActions,
       analyticsReportDrafts,
       spreadsheetImports,
       partnerApiKeys,
@@ -288,6 +315,27 @@ describe('database schema exports', () => {
     expectForeignKey(officialPayoutExports, ['official_profile_id'], 'official_profiles');
     expectForeignKey(qrCodes, ['created_by'], 'users');
     expectForeignKey(auditLogs, ['actor_user_id'], 'users');
+    expectForeignKey(guardianAthleteLinks, ['guardian_user_id'], 'users');
+    expectForeignKey(guardianAthleteLinks, ['athlete_id'], 'athletes');
+    expectForeignKey(guardianAthleteLinks, ['school_id'], 'schools');
+    expectForeignKey(guardianAthleteLinks, ['created_by'], 'users');
+    expectForeignKey(announcements, ['created_by'], 'users');
+    expectForeignKey(notificationPreferences, ['user_id'], 'users');
+    expectForeignKey(notificationPreferences, ['updated_by'], 'users');
+    expectForeignKey(communicationTemplates, ['created_by'], 'users');
+    expectForeignKey(communicationNotifications, ['recipient_user_id'], 'users');
+    expectForeignKey(communicationNotifications, ['created_by'], 'users');
+    expectForeignKey(notificationDeliveries, ['notification_id'], 'communication_notifications');
+    expectForeignKey(conversationThreads, ['school_id'], 'schools');
+    expectForeignKey(conversationThreads, ['team_id'], 'teams');
+    expectForeignKey(conversationThreads, ['athlete_id'], 'athletes');
+    expectForeignKey(conversationThreads, ['created_by'], 'users');
+    expectForeignKey(threadMessages, ['thread_id'], 'conversation_threads');
+    expectForeignKey(threadMessages, ['author_user_id'], 'users');
+    expectForeignKey(threadMessages, ['hidden_by'], 'users');
+    expectForeignKey(messageModerationActions, ['thread_id'], 'conversation_threads');
+    expectForeignKey(messageModerationActions, ['message_id'], 'thread_messages');
+    expectForeignKey(messageModerationActions, ['acted_by'], 'users');
     expectForeignKey(analyticsReportDrafts, ['created_by'], 'users');
     expectForeignKey(analyticsReportDrafts, ['approved_by'], 'users');
     expectForeignKey(spreadsheetImports, ['created_by'], 'users');
@@ -397,6 +445,29 @@ describe('database schema exports', () => {
     expect(
       uniqueIndexColumnNames(scheduleNotifications, 'schedule_notifications_tenant_id_id_unique'),
     ).toEqual(['tenant_id', 'id']);
+    expect(
+      uniqueIndexColumnNames(guardianAthleteLinks, 'guardian_athlete_links_tenant_id_id_unique'),
+    ).toEqual(['tenant_id', 'id']);
+    expect(uniqueIndexColumnNames(announcements, 'announcements_tenant_id_id_unique')).toEqual([
+      'tenant_id',
+      'id',
+    ]);
+    expect(
+      uniqueIndexColumnNames(communicationTemplates, 'communication_templates_tenant_id_id_unique'),
+    ).toEqual(['tenant_id', 'id']);
+    expect(
+      uniqueIndexColumnNames(
+        communicationNotifications,
+        'communication_notifications_tenant_id_id_unique',
+      ),
+    ).toEqual(['tenant_id', 'id']);
+    expect(
+      uniqueIndexColumnNames(conversationThreads, 'conversation_threads_tenant_id_id_unique'),
+    ).toEqual(['tenant_id', 'id']);
+    expect(uniqueIndexColumnNames(threadMessages, 'thread_messages_tenant_id_id_unique')).toEqual([
+      'tenant_id',
+      'id',
+    ]);
     expect(
       uniqueIndexColumnNames(officialPayoutExports, 'official_payout_exports_tenant_id_id_unique'),
     ).toEqual(['tenant_id', 'id']);
@@ -579,6 +650,48 @@ describe('database schema exports', () => {
       'official_profiles',
       ['tenant_id', 'id'],
     );
+    expectCompositeForeignKey(guardianAthleteLinks, ['tenant_id', 'athlete_id'], 'athletes', [
+      'tenant_id',
+      'id',
+    ]);
+    expectCompositeForeignKey(guardianAthleteLinks, ['tenant_id', 'school_id'], 'schools', [
+      'tenant_id',
+      'id',
+    ]);
+    expectCompositeForeignKey(
+      notificationDeliveries,
+      ['tenant_id', 'notification_id'],
+      'communication_notifications',
+      ['tenant_id', 'id'],
+    );
+    expectCompositeForeignKey(conversationThreads, ['tenant_id', 'school_id'], 'schools', [
+      'tenant_id',
+      'id',
+    ]);
+    expectCompositeForeignKey(conversationThreads, ['tenant_id', 'team_id'], 'teams', [
+      'tenant_id',
+      'id',
+    ]);
+    expectCompositeForeignKey(conversationThreads, ['tenant_id', 'athlete_id'], 'athletes', [
+      'tenant_id',
+      'id',
+    ]);
+    expectCompositeForeignKey(threadMessages, ['tenant_id', 'thread_id'], 'conversation_threads', [
+      'tenant_id',
+      'id',
+    ]);
+    expectCompositeForeignKey(
+      messageModerationActions,
+      ['tenant_id', 'thread_id'],
+      'conversation_threads',
+      ['tenant_id', 'id'],
+    );
+    expectCompositeForeignKey(
+      messageModerationActions,
+      ['tenant_id', 'message_id'],
+      'thread_messages',
+      ['tenant_id', 'id'],
+    );
     expectCompositeForeignKey(brackets, ['tenant_id', 'tournament_id'], 'tournaments', [
       'tenant_id',
       'id',
@@ -722,5 +835,36 @@ describe('database schema exports', () => {
     expect(
       uniqueIndexColumnNames(officialAssignments, 'official_assignments_match_profile_role_unique'),
     ).toEqual(['match_id', 'official_profile_id', 'role']);
+  });
+
+  it('indexes communications identity, delivery, and threaded messaging operations', () => {
+    expect(
+      uniqueIndexColumnNames(
+        guardianAthleteLinks,
+        'guardian_athlete_links_guardian_athlete_unique',
+      ),
+    ).toEqual(['guardian_user_id', 'athlete_id']);
+    expect(
+      uniqueIndexColumnNames(
+        notificationPreferences,
+        'notification_preferences_user_channel_category_unique',
+      ),
+    ).toEqual(['user_id', 'channel', 'category']);
+    expect(
+      uniqueIndexColumnNames(communicationTemplates, 'communication_templates_tenant_key_unique'),
+    ).toEqual(['tenant_id', 'key']);
+    expect(indexColumnNames(announcements, 'announcements_category_idx')).toEqual(['category']);
+    expect(
+      indexColumnNames(communicationNotifications, 'communication_notifications_recipient_idx'),
+    ).toEqual(['recipient_user_id']);
+    expect(indexColumnNames(notificationDeliveries, 'notification_deliveries_status_idx')).toEqual([
+      'status',
+    ]);
+    expect(indexColumnNames(conversationThreads, 'conversation_threads_school_status_idx')).toEqual(
+      ['school_id', 'status'],
+    );
+    expect(indexColumnNames(threadMessages, 'thread_messages_thread_id_idx')).toEqual([
+      'thread_id',
+    ]);
   });
 });

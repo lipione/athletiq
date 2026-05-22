@@ -12,12 +12,16 @@ import { and, eq, inArray, lte, ne } from 'drizzle-orm';
 import {
   athletes,
   analyticsReportDrafts,
+  announcements,
   auditLogs,
   availabilityWindows,
   bracketNodes,
   brackets,
   bracketSeeds,
   bracketVersions,
+  communicationNotifications,
+  communicationTemplates,
+  conversationThreads,
   discountCodes,
   documentDuplicateCandidates,
   documentExtractions,
@@ -28,6 +32,7 @@ import {
   facilities,
   federationOverrides,
   guardianConsents,
+  guardianAthleteLinks,
   identityDocuments,
   invoiceInstallments,
   invoices,
@@ -35,6 +40,9 @@ import {
   matchSchedules,
   matches,
   membershipPlans,
+  messageModerationActions,
+  notificationDeliveries,
+  notificationPreferences,
   officialAssignments,
   officialPayoutExports,
   officialProfiles,
@@ -53,6 +61,7 @@ import {
   teamMembers,
   teams,
   tenants,
+  threadMessages,
   tournamentRegistrations,
   tournamentWaiverRequirements,
   tournaments,
@@ -71,9 +80,9 @@ import {
   generateSingleEliminationNodes,
 } from '../brackets/bracket-engine.js';
 import { addMinutes, minutesBetween, overlaps } from '../scheduling/scheduling-engine.js';
-import { AppDataStore } from '../common/store.js';
 import type {
   AnalyticsReportDraftRecord,
+  AnnouncementRecord,
   AuthenticatedUser,
   BracketFormat,
   BracketNodeRecord,
@@ -83,6 +92,13 @@ import type {
   BracketTeamSummary,
   BracketVersionRecord,
   BracketView,
+  CommunicationCategory,
+  CommunicationChannel,
+  CommunicationLocale,
+  CommunicationNotificationRecord,
+  CommunicationPriority,
+  CommunicationTemplateRecord,
+  ConversationThreadRecord,
   DocumentDuplicateCandidateRecord,
   DocumentExtractionRecord,
   DocumentReviewFlagRecord,
@@ -97,6 +113,8 @@ import type {
   FacilityRecord,
   FinanceReportRecord,
   ExportBundleRecord,
+  FamilyDashboardRecord,
+  GuardianAthleteLinkRecord,
   IdentityDocumentRecord,
   IdentityDocumentStatus,
   ImportErrorRecord,
@@ -114,6 +132,9 @@ import type {
   MatchAthleteStat,
   MatchDerivedStats,
   MatchRecord,
+  MessageModerationActionRecord,
+  NotificationDeliveryRecord,
+  NotificationPreferenceRecord,
   OfficialAssignmentRecord,
   OfficialPayoutExportRecord,
   OfficialProfileRecord,
@@ -124,6 +145,7 @@ import type {
   RefundRecord,
   ScheduleNotificationRecord,
   SearchResults,
+  ThreadMessageRecord,
   SchoolMembershipRecord,
   SpreadsheetImportRecord,
   StandingRowRecord,
@@ -265,6 +287,15 @@ type OfficialPayoutExportRow = typeof officialPayoutExports.$inferSelect;
 type QrCodeRow = typeof qrCodes.$inferSelect;
 type SyncMutationRow = typeof syncMutations.$inferSelect;
 type RefreshSessionRow = typeof refreshSessions.$inferSelect;
+type GuardianAthleteLinkRow = typeof guardianAthleteLinks.$inferSelect;
+type AnnouncementRow = typeof announcements.$inferSelect;
+type NotificationPreferenceRow = typeof notificationPreferences.$inferSelect;
+type CommunicationTemplateRow = typeof communicationTemplates.$inferSelect;
+type CommunicationNotificationRow = typeof communicationNotifications.$inferSelect;
+type NotificationDeliveryRow = typeof notificationDeliveries.$inferSelect;
+type ConversationThreadRow = typeof conversationThreads.$inferSelect;
+type ThreadMessageRow = typeof threadMessages.$inferSelect;
+type MessageModerationActionRow = typeof messageModerationActions.$inferSelect;
 type AnalyticsReportDraftRow = typeof analyticsReportDrafts.$inferSelect;
 type SpreadsheetImportRow = typeof spreadsheetImports.$inferSelect;
 type PartnerApiKeyRow = typeof partnerApiKeys.$inferSelect;
@@ -5334,55 +5365,908 @@ export class PostgresDocumentRepository
 }
 
 @Injectable()
-export class PostgresCommunicationRepository implements CommunicationRepository {
-  constructor(@Inject(AppDataStore) private readonly data: AppDataStore) {}
-
-  linkGuardian(actor: AuthenticatedUser, input: LinkGuardianInput) {
-    return this.data.linkGuardianToAthlete(actor, input);
+export class PostgresCommunicationRepository
+  extends PostgresRepositoryBase
+  implements CommunicationRepository
+{
+  constructor(@Inject(DatabaseService) database: DatabaseService) {
+    super(database);
   }
 
-  getFamilyDashboard(actor: AuthenticatedUser, guardianUserId?: string) {
-    return this.data.getFamilyDashboard(actor, guardianUserId);
+  async linkGuardian(
+    actor: AuthenticatedUser,
+    input: LinkGuardianInput,
+  ): Promise<GuardianAthleteLinkRecord> {
+    const [guardian, athlete] = await Promise.all([
+      this.findUserRow(input.guardianUserId),
+      this.findAthleteRow(input.athleteId),
+    ]);
+    if (!guardian || !guardian.roles.includes('guardian')) {
+      throw new NotFoundException('Guardian user not found');
+    }
+    if (!athlete) {
+      throw new NotFoundException('Athlete not found');
+    }
+    this.assertSchoolScope(
+      actor,
+      athlete.schoolId,
+      'Cannot link guardian outside your school scope',
+    );
+
+    const created = await this.db.transaction(async (tx) => {
+      const db = tx as unknown as DatabaseExecutor;
+      const [existing] = await db
+        .select()
+        .from(guardianAthleteLinks)
+        .where(
+          and(
+            eq(guardianAthleteLinks.guardianUserId, guardian.id),
+            eq(guardianAthleteLinks.athleteId, athlete.id),
+          ),
+        )
+        .limit(1);
+      if (existing) {
+        return existing;
+      }
+
+      const now = new Date();
+      const [inserted] = await db
+        .insert(guardianAthleteLinks)
+        .values({
+          id: this.nextId('gal'),
+          tenantId: athlete.tenantId,
+          guardianUserId: guardian.id,
+          athleteId: athlete.id,
+          schoolId: athlete.schoolId,
+          relationship: input.relationship,
+          createdBy: actor.id,
+          createdAt: now,
+        })
+        .returning();
+
+      if (!guardian.schoolIds.includes(athlete.schoolId)) {
+        await db
+          .update(users)
+          .set({ schoolIds: [...guardian.schoolIds, athlete.schoolId], updatedAt: now })
+          .where(eq(users.id, guardian.id));
+      }
+
+      const link = this.expectReturned(inserted, 'communications.guardianLink.create');
+      await this.addAuditLog(
+        {
+          tenantId: athlete.tenantId,
+          actorUserId: actor.id,
+          action: 'communications.guardian_linked',
+          resource: 'athlete',
+          resourceId: athlete.id,
+          metadata: { guardianUserId: guardian.id, schoolId: athlete.schoolId },
+        },
+        db,
+      );
+      return link;
+    });
+
+    return this.mapGuardianAthleteLink(created);
   }
 
-  createAnnouncement(actor: AuthenticatedUser, input: CreateAnnouncementInput) {
-    return this.data.createAnnouncement(actor, input);
+  async getFamilyDashboard(
+    actor: AuthenticatedUser,
+    guardianUserId?: string,
+  ): Promise<FamilyDashboardRecord> {
+    const targetUserId = guardianUserId ?? actor.id;
+    if (actor.role !== 'super_admin' && actor.id !== targetUserId) {
+      throw new ForbiddenException('Cannot read another guardian dashboard');
+    }
+
+    const guardian = await this.findUserRow(targetUserId);
+    if (!guardian || !guardian.roles.includes('guardian')) {
+      throw new NotFoundException('Guardian user not found');
+    }
+
+    const links = await this.db
+      .select()
+      .from(guardianAthleteLinks)
+      .where(eq(guardianAthleteLinks.guardianUserId, guardian.id));
+    const athleteIds = links.map((link) => link.athleteId);
+    const schoolIds = [...new Set(links.map((link) => link.schoolId))];
+    const athleteRows =
+      athleteIds.length > 0
+        ? await this.db.select().from(athletes).where(inArray(athletes.id, athleteIds))
+        : [];
+    const athleteById = new Map(athleteRows.map((athlete) => [athlete.id, athlete]));
+
+    const allAnnouncements = await this.db.select().from(announcements);
+    const relevantAnnouncements = allAnnouncements.filter((announcement) => {
+      const target = this.parseAnnouncementTarget(announcement.target);
+      return target.schoolIds.some((schoolId) => schoolIds.includes(schoolId));
+    });
+    const notifications = await this.db
+      .select()
+      .from(communicationNotifications)
+      .where(eq(communicationNotifications.recipientUserId, guardian.id));
+    const allThreads = await this.db.select().from(conversationThreads);
+    const relevantThreads = allThreads.filter((thread) =>
+      thread.participantUserIds.includes(guardian.id),
+    );
+
+    return {
+      guardian: { id: guardian.id, email: guardian.email },
+      athletes: links
+        .map((link) => {
+          const athlete = athleteById.get(link.athleteId);
+          if (!athlete) {
+            return undefined;
+          }
+          return {
+            id: athlete.id,
+            fullName: athlete.fullName,
+            schoolId: athlete.schoolId,
+            status: athlete.status as FamilyDashboardRecord['athletes'][number]['status'],
+            ...(athlete.athletiqId ? { athletiqId: athlete.athletiqId } : {}),
+            relationship: link.relationship,
+          };
+        })
+        .filter((athlete): athlete is FamilyDashboardRecord['athletes'][number] =>
+          Boolean(athlete),
+        ),
+      announcements: relevantAnnouncements.map((announcement) =>
+        this.mapAnnouncement(announcement),
+      ),
+      notifications: notifications.map((notification) =>
+        this.mapCommunicationNotification(notification),
+      ),
+      threads: relevantThreads.map((thread) => this.mapConversationThread(thread)),
+    };
   }
 
-  upsertPreference(actor: AuthenticatedUser, input: UpsertNotificationPreferenceInput) {
-    return this.data.upsertNotificationPreference(actor, input);
+  async createAnnouncement(
+    actor: AuthenticatedUser,
+    input: CreateAnnouncementInput,
+  ): Promise<AnnouncementRecord> {
+    const schoolIds = [...new Set(input.schoolIds ?? [])];
+    for (const schoolId of schoolIds) {
+      const school = await this.findSchoolRow(schoolId);
+      if (!school) {
+        throw new NotFoundException('School not found');
+      }
+      this.assertSchoolScope(actor, schoolId, 'Cannot announce outside your school scope');
+    }
+
+    const target = {
+      schoolIds,
+      teamIds: [...new Set(input.teamIds ?? [])],
+      ...(input.role ? { role: input.role } : {}),
+    };
+    const tenantId = schoolIds[0] ?? 'platform';
+    const [created] = await this.db
+      .insert(announcements)
+      .values({
+        id: this.nextId('ann'),
+        tenantId,
+        title: input.title,
+        body: input.body,
+        category: input.category,
+        priority: input.priority ?? 'normal',
+        locale: input.locale ?? 'en',
+        target,
+        createdBy: actor.id,
+        createdAt: new Date(),
+      })
+      .returning();
+    const announcement = this.expectReturned(created, 'communications.announcement.create');
+
+    await this.addAuditLog({
+      tenantId,
+      actorUserId: actor.id,
+      action: 'communications.announcement_created',
+      resource: 'announcement',
+      resourceId: announcement.id,
+      metadata: { schoolIds: schoolIds.join(','), category: announcement.category },
+    });
+
+    return this.mapAnnouncement(announcement);
   }
 
-  listPreferences(actor: AuthenticatedUser, userId?: string) {
-    return this.data.listNotificationPreferences(actor, userId);
+  async upsertPreference(
+    actor: AuthenticatedUser,
+    input: UpsertNotificationPreferenceInput,
+  ): Promise<NotificationPreferenceRecord> {
+    const userId = input.userId ?? actor.id;
+    if (actor.role !== 'super_admin' && actor.id !== userId) {
+      throw new ForbiddenException('Cannot update another user preference');
+    }
+    const user = await this.findUserRow(userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const now = new Date();
+    const [existing] = await this.db
+      .select()
+      .from(notificationPreferences)
+      .where(
+        and(
+          eq(notificationPreferences.userId, userId),
+          eq(notificationPreferences.channel, input.channel),
+          eq(notificationPreferences.category, input.category),
+        ),
+      )
+      .limit(1);
+
+    const preference = await this.db.transaction(async (tx) => {
+      const db = tx as unknown as DatabaseExecutor;
+      if (existing) {
+        const [updated] = await db
+          .update(notificationPreferences)
+          .set({
+            enabled: input.enabled,
+            locale: input.locale ?? existing.locale,
+            quietHoursStart: input.quietHoursStart ?? null,
+            quietHoursEnd: input.quietHoursEnd ?? null,
+            updatedBy: actor.id,
+            updatedAt: now,
+          })
+          .where(eq(notificationPreferences.id, existing.id))
+          .returning();
+        return this.expectReturned(updated, 'communications.preference.update');
+      }
+
+      const [inserted] = await db
+        .insert(notificationPreferences)
+        .values({
+          id: this.nextId('pref'),
+          tenantId: user.tenantId,
+          userId,
+          channel: input.channel,
+          category: input.category,
+          enabled: input.enabled,
+          locale: input.locale ?? 'en',
+          ...(input.quietHoursStart ? { quietHoursStart: input.quietHoursStart } : {}),
+          ...(input.quietHoursEnd ? { quietHoursEnd: input.quietHoursEnd } : {}),
+          updatedBy: actor.id,
+          updatedAt: now,
+        })
+        .returning();
+      return this.expectReturned(inserted, 'communications.preference.create');
+    });
+
+    await this.addAuditLog({
+      tenantId: preference.tenantId,
+      actorUserId: actor.id,
+      action: 'communications.preference_updated',
+      resource: 'notification_preference',
+      resourceId: preference.id,
+      metadata: { userId, channel: preference.channel, category: preference.category },
+    });
+
+    return this.mapNotificationPreference(preference);
   }
 
-  createTemplate(actor: AuthenticatedUser, input: CreateCommunicationTemplateInput) {
-    return this.data.createCommunicationTemplate(actor, input);
+  async listPreferences(
+    actor: AuthenticatedUser,
+    userId?: string,
+  ): Promise<{ preferences: NotificationPreferenceRecord[] }> {
+    const targetUserId = userId ?? actor.id;
+    if (actor.role !== 'super_admin' && actor.id !== targetUserId) {
+      throw new ForbiddenException('Cannot read another user preference');
+    }
+    const rows = await this.db
+      .select()
+      .from(notificationPreferences)
+      .where(eq(notificationPreferences.userId, targetUserId));
+    return { preferences: rows.map((row) => this.mapNotificationPreference(row)) };
   }
 
-  sendTemplateNotification(actor: AuthenticatedUser, input: SendTemplateNotificationInput) {
-    return this.data.sendTemplateNotification(actor, input);
+  async createTemplate(
+    actor: AuthenticatedUser,
+    input: CreateCommunicationTemplateInput,
+  ): Promise<CommunicationTemplateRecord> {
+    await this.ensurePlatformTenant();
+    const now = new Date();
+    const [existing] = await this.db
+      .select()
+      .from(communicationTemplates)
+      .where(
+        and(
+          eq(communicationTemplates.tenantId, 'platform'),
+          eq(communicationTemplates.key, input.key),
+        ),
+      )
+      .limit(1);
+
+    const template = await this.db.transaction(async (tx) => {
+      const db = tx as unknown as DatabaseExecutor;
+      if (existing) {
+        const [updated] = await db
+          .update(communicationTemplates)
+          .set({
+            category: input.category,
+            required: input.required ?? false,
+            variants: this.cloneTemplateVariants(input.variants),
+            updatedAt: now,
+          })
+          .where(eq(communicationTemplates.id, existing.id))
+          .returning();
+        return this.expectReturned(updated, 'communications.template.update');
+      }
+      const [inserted] = await db
+        .insert(communicationTemplates)
+        .values({
+          id: this.nextId('tmpl'),
+          tenantId: 'platform',
+          key: input.key,
+          category: input.category,
+          required: input.required ?? false,
+          variants: this.cloneTemplateVariants(input.variants),
+          createdBy: actor.id,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .returning();
+      return this.expectReturned(inserted, 'communications.template.create');
+    });
+
+    await this.addAuditLog({
+      tenantId: 'platform',
+      actorUserId: actor.id,
+      action: 'communications.template_saved',
+      resource: 'communication_template',
+      resourceId: template.id,
+      metadata: { key: template.key, required: template.required },
+    });
+
+    return this.mapCommunicationTemplate(template);
   }
 
-  listInbox(actor: AuthenticatedUser, userId?: string) {
-    return this.data.listCommunicationInbox(actor, userId);
+  async sendTemplateNotification(
+    actor: AuthenticatedUser,
+    input: SendTemplateNotificationInput,
+  ): Promise<{
+    notification: CommunicationNotificationRecord;
+    delivery: NotificationDeliveryRecord;
+  }> {
+    const recipient = await this.findUserRow(input.recipientUserId);
+    if (!recipient) {
+      throw new NotFoundException('Recipient not found');
+    }
+    const [template] = await this.db
+      .select()
+      .from(communicationTemplates)
+      .where(eq(communicationTemplates.key, input.templateKey))
+      .limit(1);
+    if (!template) {
+      throw new NotFoundException('Communication template not found');
+    }
+
+    const category = template.category as CommunicationCategory;
+    const locale = input.locale ?? (await this.preferredLocale(recipient.id, category)) ?? 'en';
+    const variants = this.parseTemplateVariants(template.variants);
+    const variant = variants[locale] ?? variants.en;
+    const subject = this.renderTemplate(variant.subject, input.variables ?? {});
+    const body = this.renderTemplate(variant.body, input.variables ?? {});
+    const [preference] = await this.db
+      .select()
+      .from(notificationPreferences)
+      .where(
+        and(
+          eq(notificationPreferences.userId, recipient.id),
+          eq(notificationPreferences.channel, input.channel),
+          eq(notificationPreferences.category, category),
+        ),
+      )
+      .limit(1);
+    const suppressed = !template.required && preference?.enabled === false;
+
+    const result = await this.db.transaction(async (tx) => {
+      const db = tx as unknown as DatabaseExecutor;
+      const now = new Date();
+      const [notification] = await db
+        .insert(communicationNotifications)
+        .values({
+          id: this.nextId('cnotif'),
+          tenantId: recipient.tenantId,
+          recipientUserId: recipient.id,
+          category,
+          channel: input.channel,
+          locale,
+          subject,
+          body,
+          required: template.required,
+          ...(input.resourceType ? { resourceType: input.resourceType } : {}),
+          ...(input.resourceId ? { resourceId: input.resourceId } : {}),
+          status: 'pending',
+          createdBy: actor.id,
+          createdAt: now,
+        })
+        .returning();
+      const notificationRow = this.expectReturned(
+        notification,
+        'communications.notification.create',
+      );
+      const [delivery] = await db
+        .insert(notificationDeliveries)
+        .values({
+          id: this.nextId('delivery'),
+          tenantId: recipient.tenantId,
+          notificationId: notificationRow.id,
+          channel: input.channel,
+          provider: input.channel === 'in_app' ? 'stub' : input.channel,
+          status: suppressed ? 'suppressed' : 'queued',
+          attempt: suppressed ? 0 : 1,
+          ...(suppressed ? { error: 'suppressed_by_preference' } : {}),
+          createdAt: now,
+        })
+        .returning();
+      const deliveryRow = this.expectReturned(delivery, 'communications.delivery.create');
+      await this.addAuditLog(
+        {
+          tenantId: recipient.tenantId,
+          actorUserId: actor.id,
+          action: 'communications.notification_created',
+          resource: 'communication_notification',
+          resourceId: notificationRow.id,
+          metadata: {
+            recipientUserId: recipient.id,
+            templateKey: template.key,
+            deliveryStatus: deliveryRow.status,
+          },
+        },
+        db,
+      );
+      return { notification: notificationRow, delivery: deliveryRow };
+    });
+
+    return {
+      notification: this.mapCommunicationNotification(result.notification),
+      delivery: this.mapNotificationDelivery(result.delivery),
+    };
   }
 
-  createThread(actor: AuthenticatedUser, input: CreateConversationThreadInput) {
-    return this.data.createConversationThread(actor, input);
+  async listInbox(
+    actor: AuthenticatedUser,
+    userId?: string,
+  ): Promise<{
+    notifications: CommunicationNotificationRecord[];
+    deliveries: NotificationDeliveryRecord[];
+  }> {
+    const targetUserId = userId ?? actor.id;
+    if (actor.role !== 'super_admin' && actor.id !== targetUserId) {
+      throw new ForbiddenException('Cannot read another user inbox');
+    }
+    const notificationRows = await this.db
+      .select()
+      .from(communicationNotifications)
+      .where(eq(communicationNotifications.recipientUserId, targetUserId));
+    const notificationIds = notificationRows.map((notification) => notification.id);
+    const deliveryRows =
+      notificationIds.length > 0
+        ? await this.db
+            .select()
+            .from(notificationDeliveries)
+            .where(inArray(notificationDeliveries.notificationId, notificationIds))
+        : [];
+    return {
+      notifications: notificationRows.map((row) => this.mapCommunicationNotification(row)),
+      deliveries: deliveryRows.map((row) => this.mapNotificationDelivery(row)),
+    };
   }
 
-  postMessage(actor: AuthenticatedUser, threadId: string, body: string) {
-    return this.data.postThreadMessage(actor, threadId, body);
+  async createThread(
+    actor: AuthenticatedUser,
+    input: CreateConversationThreadInput,
+  ): Promise<ConversationThreadRecord> {
+    const school = await this.findSchoolRow(input.schoolId);
+    if (!school) {
+      throw new NotFoundException('School not found');
+    }
+    this.assertSchoolScope(actor, input.schoolId, 'Cannot create thread outside your school scope');
+    const participants = [...new Set([actor.id, ...input.participantUserIds])];
+    for (const userId of participants) {
+      const user = await this.findUserRow(userId);
+      if (!user) {
+        throw new NotFoundException('Thread participant not found');
+      }
+    }
+
+    const created = await this.db.transaction(async (tx) => {
+      const db = tx as unknown as DatabaseExecutor;
+      const now = new Date();
+      const [thread] = await db
+        .insert(conversationThreads)
+        .values({
+          id: this.nextId('thread'),
+          tenantId: school.tenantId,
+          title: input.title,
+          schoolId: school.id,
+          ...(input.teamId ? { teamId: input.teamId } : {}),
+          ...(input.athleteId ? { athleteId: input.athleteId } : {}),
+          participantUserIds: participants,
+          status: 'open',
+          createdBy: actor.id,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .returning();
+      const threadRow = this.expectReturned(thread, 'communications.thread.create');
+      await this.addAuditLog(
+        {
+          tenantId: school.tenantId,
+          actorUserId: actor.id,
+          action: 'communications.thread_created',
+          resource: 'conversation_thread',
+          resourceId: threadRow.id,
+          metadata: { schoolId: threadRow.schoolId, participantCount: participants.length },
+        },
+        db,
+      );
+      return threadRow;
+    });
+
+    return this.mapConversationThread(created);
   }
 
-  hideMessage(actor: AuthenticatedUser, messageId: string, reason: string) {
-    return this.data.hideThreadMessage(actor, messageId, reason);
+  async postMessage(
+    actor: AuthenticatedUser,
+    threadId: string,
+    body: string,
+  ): Promise<ThreadMessageRecord> {
+    const [thread] = await this.db
+      .select()
+      .from(conversationThreads)
+      .where(eq(conversationThreads.id, threadId))
+      .limit(1);
+    if (!thread) {
+      throw new NotFoundException('Thread not found');
+    }
+    if (thread.status !== 'open') {
+      throw new BadRequestException('Thread is not open');
+    }
+    if (!thread.participantUserIds.includes(actor.id) && actor.role !== 'super_admin') {
+      throw new ForbiddenException('Cannot post to this thread');
+    }
+
+    const message = await this.db.transaction(async (tx) => {
+      const db = tx as unknown as DatabaseExecutor;
+      const now = new Date();
+      const [inserted] = await db
+        .insert(threadMessages)
+        .values({
+          id: this.nextId('msg'),
+          tenantId: thread.tenantId,
+          threadId,
+          authorUserId: actor.id,
+          body,
+          status: 'visible',
+          createdAt: now,
+        })
+        .returning();
+      await db
+        .update(conversationThreads)
+        .set({ updatedAt: now })
+        .where(eq(conversationThreads.id, thread.id));
+      const messageRow = this.expectReturned(inserted, 'communications.message.create');
+      await this.addAuditLog(
+        {
+          tenantId: thread.tenantId,
+          actorUserId: actor.id,
+          action: 'communications.message_posted',
+          resource: 'thread_message',
+          resourceId: messageRow.id,
+          metadata: { threadId },
+        },
+        db,
+      );
+      return messageRow;
+    });
+
+    return this.mapThreadMessage(message);
   }
 
-  listThread(actor: AuthenticatedUser, threadId: string) {
-    return this.data.listConversationThread(actor, threadId);
+  async hideMessage(
+    actor: AuthenticatedUser,
+    messageId: string,
+    reason: string,
+  ): Promise<{ message: ThreadMessageRecord; moderation: MessageModerationActionRecord }> {
+    const [message] = await this.db
+      .select()
+      .from(threadMessages)
+      .where(eq(threadMessages.id, messageId))
+      .limit(1);
+    if (!message) {
+      throw new NotFoundException('Thread message not found');
+    }
+    const [thread] = await this.db
+      .select()
+      .from(conversationThreads)
+      .where(eq(conversationThreads.id, message.threadId))
+      .limit(1);
+    if (!thread) {
+      throw new NotFoundException('Thread not found');
+    }
+    this.assertSchoolScope(actor, thread.schoolId, 'Cannot moderate this thread');
+
+    const result = await this.db.transaction(async (tx) => {
+      const db = tx as unknown as DatabaseExecutor;
+      const now = new Date();
+      const [updated] = await db
+        .update(threadMessages)
+        .set({
+          status: 'hidden',
+          hiddenAt: now,
+          hiddenBy: actor.id,
+          moderationReason: reason,
+        })
+        .where(eq(threadMessages.id, message.id))
+        .returning();
+      const [moderation] = await db
+        .insert(messageModerationActions)
+        .values({
+          id: this.nextId('mod'),
+          tenantId: thread.tenantId,
+          threadId: thread.id,
+          messageId: message.id,
+          action: 'hide',
+          reason,
+          actedBy: actor.id,
+          actedAt: now,
+        })
+        .returning();
+      await this.addAuditLog(
+        {
+          tenantId: thread.tenantId,
+          actorUserId: actor.id,
+          action: 'communications.message_hidden',
+          resource: 'thread_message',
+          resourceId: message.id,
+          metadata: { threadId: thread.id, reason },
+        },
+        db,
+      );
+      return {
+        message: this.expectReturned(updated, 'communications.message.hide'),
+        moderation: this.expectReturned(moderation, 'communications.moderation.create'),
+      };
+    });
+
+    return {
+      message: this.mapThreadMessage(result.message),
+      moderation: this.mapMessageModerationAction(result.moderation),
+    };
+  }
+
+  async listThread(
+    actor: AuthenticatedUser,
+    threadId: string,
+  ): Promise<{
+    thread: ConversationThreadRecord;
+    messages: ThreadMessageRecord[];
+    moderationActions: MessageModerationActionRecord[];
+  }> {
+    const [thread] = await this.db
+      .select()
+      .from(conversationThreads)
+      .where(eq(conversationThreads.id, threadId))
+      .limit(1);
+    if (!thread) {
+      throw new NotFoundException('Thread not found');
+    }
+    if (!thread.participantUserIds.includes(actor.id) && actor.role !== 'super_admin') {
+      throw new ForbiddenException('Cannot read this thread');
+    }
+    const [messages, moderationActions] = await Promise.all([
+      this.db.select().from(threadMessages).where(eq(threadMessages.threadId, thread.id)),
+      this.db
+        .select()
+        .from(messageModerationActions)
+        .where(eq(messageModerationActions.threadId, thread.id)),
+    ]);
+    return {
+      thread: this.mapConversationThread(thread),
+      messages: messages.map((row) => this.mapThreadMessage(row)),
+      moderationActions: moderationActions.map((row) => this.mapMessageModerationAction(row)),
+    };
+  }
+
+  private async findUserRow(userId: string) {
+    if (userId === DEFAULT_USER_ID) {
+      await this.ensureDefaultSuperAdmin();
+    }
+    const [user] = await this.db.select().from(users).where(eq(users.id, userId)).limit(1);
+    return user;
+  }
+
+  private async findSchoolRow(schoolId: string) {
+    const [school] = await this.db.select().from(schools).where(eq(schools.id, schoolId)).limit(1);
+    return school;
+  }
+
+  private async findAthleteRow(athleteId: string) {
+    const [athlete] = await this.db
+      .select()
+      .from(athletes)
+      .where(eq(athletes.id, athleteId))
+      .limit(1);
+    return athlete;
+  }
+
+  private assertSchoolScope(actor: AuthenticatedUser, schoolId: string, message: string) {
+    if (actor.role !== 'super_admin' && !actor.schoolIds.includes(schoolId)) {
+      throw new ForbiddenException(message);
+    }
+  }
+
+  private mapGuardianAthleteLink(row: GuardianAthleteLinkRow): GuardianAthleteLinkRecord {
+    return {
+      id: row.id,
+      guardianUserId: row.guardianUserId,
+      athleteId: row.athleteId,
+      schoolId: row.schoolId,
+      relationship: row.relationship,
+      createdBy: row.createdBy,
+      createdAt: this.toIso(row.createdAt),
+    };
+  }
+
+  private mapAnnouncement(row: AnnouncementRow): AnnouncementRecord {
+    return {
+      id: row.id,
+      title: row.title,
+      body: row.body,
+      category: row.category as CommunicationCategory,
+      priority: row.priority as CommunicationPriority,
+      locale: row.locale as CommunicationLocale,
+      target: this.parseAnnouncementTarget(row.target),
+      createdBy: row.createdBy,
+      createdAt: this.toIso(row.createdAt),
+    };
+  }
+
+  private mapNotificationPreference(row: NotificationPreferenceRow): NotificationPreferenceRecord {
+    return {
+      id: row.id,
+      userId: row.userId,
+      channel: row.channel as CommunicationChannel,
+      category: row.category as CommunicationCategory,
+      enabled: row.enabled,
+      locale: row.locale as CommunicationLocale,
+      ...(row.quietHoursStart ? { quietHoursStart: row.quietHoursStart } : {}),
+      ...(row.quietHoursEnd ? { quietHoursEnd: row.quietHoursEnd } : {}),
+      updatedBy: row.updatedBy,
+      updatedAt: this.toIso(row.updatedAt),
+    };
+  }
+
+  private mapCommunicationTemplate(row: CommunicationTemplateRow): CommunicationTemplateRecord {
+    return {
+      id: row.id,
+      key: row.key,
+      category: row.category as CommunicationCategory,
+      required: row.required,
+      variants: this.parseTemplateVariants(row.variants),
+      createdBy: row.createdBy,
+      createdAt: this.toIso(row.createdAt),
+      updatedAt: this.toIso(row.updatedAt),
+    };
+  }
+
+  private mapCommunicationNotification(
+    row: CommunicationNotificationRow,
+  ): CommunicationNotificationRecord {
+    return {
+      id: row.id,
+      recipientUserId: row.recipientUserId,
+      category: row.category as CommunicationCategory,
+      channel: row.channel as CommunicationChannel,
+      locale: row.locale as CommunicationLocale,
+      subject: row.subject,
+      body: row.body,
+      required: row.required,
+      ...(row.resourceType ? { resourceType: row.resourceType } : {}),
+      ...(row.resourceId ? { resourceId: row.resourceId } : {}),
+      status: row.status as CommunicationNotificationRecord['status'],
+      createdBy: row.createdBy,
+      createdAt: this.toIso(row.createdAt),
+      ...(row.readAt ? { readAt: this.toIso(row.readAt) } : {}),
+    };
+  }
+
+  private mapNotificationDelivery(row: NotificationDeliveryRow): NotificationDeliveryRecord {
+    return {
+      id: row.id,
+      notificationId: row.notificationId,
+      channel: row.channel as CommunicationChannel,
+      provider: row.provider as NotificationDeliveryRecord['provider'],
+      status: row.status as NotificationDeliveryRecord['status'],
+      attempt: row.attempt,
+      ...(row.error ? { error: row.error } : {}),
+      createdAt: this.toIso(row.createdAt),
+    };
+  }
+
+  private mapConversationThread(row: ConversationThreadRow): ConversationThreadRecord {
+    return {
+      id: row.id,
+      title: row.title,
+      schoolId: row.schoolId,
+      ...(row.teamId ? { teamId: row.teamId } : {}),
+      ...(row.athleteId ? { athleteId: row.athleteId } : {}),
+      participantUserIds: [...row.participantUserIds],
+      status: row.status as ConversationThreadRecord['status'],
+      createdBy: row.createdBy,
+      createdAt: this.toIso(row.createdAt),
+      updatedAt: this.toIso(row.updatedAt),
+    };
+  }
+
+  private mapThreadMessage(row: ThreadMessageRow): ThreadMessageRecord {
+    return {
+      id: row.id,
+      threadId: row.threadId,
+      authorUserId: row.authorUserId,
+      body: row.body,
+      status: row.status as ThreadMessageRecord['status'],
+      createdAt: this.toIso(row.createdAt),
+      ...(row.hiddenAt ? { hiddenAt: this.toIso(row.hiddenAt) } : {}),
+      ...(row.hiddenBy ? { hiddenBy: row.hiddenBy } : {}),
+      ...(row.moderationReason ? { moderationReason: row.moderationReason } : {}),
+    };
+  }
+
+  private mapMessageModerationAction(
+    row: MessageModerationActionRow,
+  ): MessageModerationActionRecord {
+    return {
+      id: row.id,
+      threadId: row.threadId,
+      messageId: row.messageId,
+      action: 'hide',
+      reason: row.reason,
+      actedBy: row.actedBy,
+      actedAt: this.toIso(row.actedAt),
+    };
+  }
+
+  private parseAnnouncementTarget(value: unknown): AnnouncementRecord['target'] {
+    const candidate = value as Partial<AnnouncementRecord['target']>;
+    return {
+      schoolIds: Array.isArray(candidate.schoolIds) ? candidate.schoolIds : [],
+      teamIds: Array.isArray(candidate.teamIds) ? candidate.teamIds : [],
+      ...(candidate.role ? { role: candidate.role } : {}),
+    };
+  }
+
+  private cloneTemplateVariants(
+    variants: Record<CommunicationLocale, { subject: string; body: string }>,
+  ) {
+    return {
+      en: { ...variants.en },
+      ne: { ...variants.ne },
+    };
+  }
+
+  private parseTemplateVariants(value: unknown) {
+    const variants = value as Record<CommunicationLocale, { subject: string; body: string }>;
+    return this.cloneTemplateVariants(variants);
+  }
+
+  private async preferredLocale(userId: string, category: CommunicationCategory) {
+    const [preference] = await this.db
+      .select()
+      .from(notificationPreferences)
+      .where(
+        and(
+          eq(notificationPreferences.userId, userId),
+          eq(notificationPreferences.category, category),
+        ),
+      )
+      .limit(1);
+    return preference?.locale as CommunicationLocale | undefined;
+  }
+
+  private renderTemplate(template: string, variables: Record<string, string>) {
+    return template.replace(/\{\{\s*([A-Za-z0-9_]+)\s*\}\}/g, (_, key: string) => {
+      return variables[key] ?? '';
+    });
   }
 }
 

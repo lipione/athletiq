@@ -1906,6 +1906,310 @@ export const federationOverrides = pgTable(
   ],
 );
 
+export const guardianAthleteLinks = pgTable(
+  'guardian_athlete_links',
+  {
+    id: varchar('id', { length: 64 }).primaryKey(),
+    tenantId: varchar('tenant_id', { length: 64 })
+      .notNull()
+      .references(() => tenants.id),
+    guardianUserId: varchar('guardian_user_id', { length: 64 })
+      .notNull()
+      .references(() => users.id),
+    athleteId: varchar('athlete_id', { length: 64 })
+      .notNull()
+      .references(() => athletes.id),
+    schoolId: varchar('school_id', { length: 64 })
+      .notNull()
+      .references(() => schools.id),
+    relationship: varchar('relationship', { length: 64 }).notNull(),
+    createdBy: varchar('created_by', { length: 64 })
+      .notNull()
+      .references(() => users.id),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('guardian_athlete_links_tenant_id_idx').on(table.tenantId),
+    index('guardian_athlete_links_guardian_user_id_idx').on(table.guardianUserId),
+    index('guardian_athlete_links_athlete_id_idx').on(table.athleteId),
+    index('guardian_athlete_links_school_id_idx').on(table.schoolId),
+    uniqueIndex('guardian_athlete_links_tenant_id_id_unique').on(table.tenantId, table.id),
+    uniqueIndex('guardian_athlete_links_guardian_athlete_unique').on(
+      table.guardianUserId,
+      table.athleteId,
+    ),
+    foreignKey({
+      name: 'guardian_athlete_links_tenant_athlete_fk',
+      columns: [table.tenantId, table.athleteId],
+      foreignColumns: [athletes.tenantId, athletes.id],
+    }),
+    foreignKey({
+      name: 'guardian_athlete_links_tenant_school_fk',
+      columns: [table.tenantId, table.schoolId],
+      foreignColumns: [schools.tenantId, schools.id],
+    }),
+  ],
+);
+
+export const announcements = pgTable(
+  'announcements',
+  {
+    id: varchar('id', { length: 64 }).primaryKey(),
+    tenantId: varchar('tenant_id', { length: 64 })
+      .notNull()
+      .references(() => tenants.id),
+    title: varchar('title', { length: 255 }).notNull(),
+    body: text('body').notNull(),
+    category: varchar('category', { length: 64 }).notNull(),
+    priority: varchar('priority', { length: 32 }).notNull().default('normal'),
+    locale: varchar('locale', { length: 16 }).notNull().default('en'),
+    target: jsonb('target').notNull(),
+    createdBy: varchar('created_by', { length: 64 })
+      .notNull()
+      .references(() => users.id),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('announcements_tenant_id_idx').on(table.tenantId),
+    index('announcements_category_idx').on(table.category),
+    index('announcements_created_at_idx').on(table.createdAt),
+    uniqueIndex('announcements_tenant_id_id_unique').on(table.tenantId, table.id),
+  ],
+);
+
+export const notificationPreferences = pgTable(
+  'notification_preferences',
+  {
+    id: varchar('id', { length: 64 }).primaryKey(),
+    tenantId: varchar('tenant_id', { length: 64 })
+      .notNull()
+      .references(() => tenants.id),
+    userId: varchar('user_id', { length: 64 })
+      .notNull()
+      .references(() => users.id),
+    channel: varchar('channel', { length: 32 }).notNull(),
+    category: varchar('category', { length: 64 }).notNull(),
+    enabled: boolean('enabled').notNull(),
+    locale: varchar('locale', { length: 16 }).notNull().default('en'),
+    quietHoursStart: varchar('quiet_hours_start', { length: 16 }),
+    quietHoursEnd: varchar('quiet_hours_end', { length: 16 }),
+    updatedBy: varchar('updated_by', { length: 64 })
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('notification_preferences_tenant_id_idx').on(table.tenantId),
+    index('notification_preferences_user_id_idx').on(table.userId),
+    uniqueIndex('notification_preferences_user_channel_category_unique').on(
+      table.userId,
+      table.channel,
+      table.category,
+    ),
+  ],
+);
+
+export const communicationTemplates = pgTable(
+  'communication_templates',
+  {
+    id: varchar('id', { length: 64 }).primaryKey(),
+    tenantId: varchar('tenant_id', { length: 64 })
+      .notNull()
+      .references(() => tenants.id),
+    key: varchar('key', { length: 128 }).notNull(),
+    category: varchar('category', { length: 64 }).notNull(),
+    required: boolean('required').notNull().default(false),
+    variants: jsonb('variants').notNull(),
+    createdBy: varchar('created_by', { length: 64 })
+      .notNull()
+      .references(() => users.id),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('communication_templates_tenant_id_idx').on(table.tenantId),
+    index('communication_templates_category_idx').on(table.category),
+    uniqueIndex('communication_templates_tenant_id_id_unique').on(table.tenantId, table.id),
+    uniqueIndex('communication_templates_tenant_key_unique').on(table.tenantId, table.key),
+  ],
+);
+
+export const communicationNotifications = pgTable(
+  'communication_notifications',
+  {
+    id: varchar('id', { length: 64 }).primaryKey(),
+    tenantId: varchar('tenant_id', { length: 64 })
+      .notNull()
+      .references(() => tenants.id),
+    recipientUserId: varchar('recipient_user_id', { length: 64 })
+      .notNull()
+      .references(() => users.id),
+    category: varchar('category', { length: 64 }).notNull(),
+    channel: varchar('channel', { length: 32 }).notNull(),
+    locale: varchar('locale', { length: 16 }).notNull(),
+    subject: varchar('subject', { length: 255 }).notNull(),
+    body: text('body').notNull(),
+    required: boolean('required').notNull().default(false),
+    resourceType: varchar('resource_type', { length: 64 }),
+    resourceId: varchar('resource_id', { length: 64 }),
+    status: varchar('status', { length: 32 }).notNull().default('pending'),
+    createdBy: varchar('created_by', { length: 64 })
+      .notNull()
+      .references(() => users.id),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    readAt: timestamp('read_at', { withTimezone: true }),
+  },
+  (table) => [
+    index('communication_notifications_tenant_id_idx').on(table.tenantId),
+    index('communication_notifications_recipient_idx').on(table.recipientUserId),
+    index('communication_notifications_status_idx').on(table.status),
+    uniqueIndex('communication_notifications_tenant_id_id_unique').on(table.tenantId, table.id),
+  ],
+);
+
+export const notificationDeliveries = pgTable(
+  'notification_deliveries',
+  {
+    id: varchar('id', { length: 64 }).primaryKey(),
+    tenantId: varchar('tenant_id', { length: 64 })
+      .notNull()
+      .references(() => tenants.id),
+    notificationId: varchar('notification_id', { length: 64 })
+      .notNull()
+      .references(() => communicationNotifications.id),
+    channel: varchar('channel', { length: 32 }).notNull(),
+    provider: varchar('provider', { length: 32 }).notNull(),
+    status: varchar('status', { length: 32 }).notNull(),
+    attempt: integer('attempt').notNull().default(0),
+    error: text('error'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('notification_deliveries_tenant_id_idx').on(table.tenantId),
+    index('notification_deliveries_notification_id_idx').on(table.notificationId),
+    index('notification_deliveries_status_idx').on(table.status),
+    foreignKey({
+      name: 'notification_deliveries_tenant_notification_fk',
+      columns: [table.tenantId, table.notificationId],
+      foreignColumns: [communicationNotifications.tenantId, communicationNotifications.id],
+    }),
+  ],
+);
+
+export const conversationThreads = pgTable(
+  'conversation_threads',
+  {
+    id: varchar('id', { length: 64 }).primaryKey(),
+    tenantId: varchar('tenant_id', { length: 64 })
+      .notNull()
+      .references(() => tenants.id),
+    title: varchar('title', { length: 255 }).notNull(),
+    schoolId: varchar('school_id', { length: 64 })
+      .notNull()
+      .references(() => schools.id),
+    teamId: varchar('team_id', { length: 64 }).references(() => teams.id),
+    athleteId: varchar('athlete_id', { length: 64 }).references(() => athletes.id),
+    participantUserIds: text('participant_user_ids').array().notNull(),
+    status: varchar('status', { length: 32 }).notNull().default('open'),
+    createdBy: varchar('created_by', { length: 64 })
+      .notNull()
+      .references(() => users.id),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('conversation_threads_tenant_id_idx').on(table.tenantId),
+    index('conversation_threads_school_status_idx').on(table.schoolId, table.status),
+    index('conversation_threads_created_at_idx').on(table.createdAt),
+    uniqueIndex('conversation_threads_tenant_id_id_unique').on(table.tenantId, table.id),
+    foreignKey({
+      name: 'conversation_threads_tenant_school_fk',
+      columns: [table.tenantId, table.schoolId],
+      foreignColumns: [schools.tenantId, schools.id],
+    }),
+    foreignKey({
+      name: 'conversation_threads_tenant_team_fk',
+      columns: [table.tenantId, table.teamId],
+      foreignColumns: [teams.tenantId, teams.id],
+    }),
+    foreignKey({
+      name: 'conversation_threads_tenant_athlete_fk',
+      columns: [table.tenantId, table.athleteId],
+      foreignColumns: [athletes.tenantId, athletes.id],
+    }),
+  ],
+);
+
+export const threadMessages = pgTable(
+  'thread_messages',
+  {
+    id: varchar('id', { length: 64 }).primaryKey(),
+    tenantId: varchar('tenant_id', { length: 64 })
+      .notNull()
+      .references(() => tenants.id),
+    threadId: varchar('thread_id', { length: 64 })
+      .notNull()
+      .references(() => conversationThreads.id),
+    authorUserId: varchar('author_user_id', { length: 64 })
+      .notNull()
+      .references(() => users.id),
+    body: text('body').notNull(),
+    status: varchar('status', { length: 32 }).notNull().default('visible'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    hiddenAt: timestamp('hidden_at', { withTimezone: true }),
+    hiddenBy: varchar('hidden_by', { length: 64 }).references(() => users.id),
+    moderationReason: text('moderation_reason'),
+  },
+  (table) => [
+    index('thread_messages_tenant_id_idx').on(table.tenantId),
+    index('thread_messages_thread_id_idx').on(table.threadId),
+    index('thread_messages_created_at_idx').on(table.createdAt),
+    uniqueIndex('thread_messages_tenant_id_id_unique').on(table.tenantId, table.id),
+    foreignKey({
+      name: 'thread_messages_tenant_thread_fk',
+      columns: [table.tenantId, table.threadId],
+      foreignColumns: [conversationThreads.tenantId, conversationThreads.id],
+    }),
+  ],
+);
+
+export const messageModerationActions = pgTable(
+  'message_moderation_actions',
+  {
+    id: varchar('id', { length: 64 }).primaryKey(),
+    tenantId: varchar('tenant_id', { length: 64 })
+      .notNull()
+      .references(() => tenants.id),
+    threadId: varchar('thread_id', { length: 64 })
+      .notNull()
+      .references(() => conversationThreads.id),
+    messageId: varchar('message_id', { length: 64 })
+      .notNull()
+      .references(() => threadMessages.id),
+    action: varchar('action', { length: 32 }).notNull(),
+    reason: text('reason').notNull(),
+    actedBy: varchar('acted_by', { length: 64 })
+      .notNull()
+      .references(() => users.id),
+    actedAt: timestamp('acted_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('message_moderation_actions_tenant_id_idx').on(table.tenantId),
+    index('message_moderation_actions_thread_id_idx').on(table.threadId),
+    index('message_moderation_actions_message_id_idx').on(table.messageId),
+    foreignKey({
+      name: 'message_moderation_actions_tenant_thread_fk',
+      columns: [table.tenantId, table.threadId],
+      foreignColumns: [conversationThreads.tenantId, conversationThreads.id],
+    }),
+    foreignKey({
+      name: 'message_moderation_actions_tenant_message_fk',
+      columns: [table.tenantId, table.messageId],
+      foreignColumns: [threadMessages.tenantId, threadMessages.id],
+    }),
+  ],
+);
+
 export const analyticsReportDrafts = pgTable(
   'analytics_report_drafts',
   {
