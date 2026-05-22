@@ -9,8 +9,12 @@ import type {
   AvailabilityFilter,
   BillingRepository,
   BracketRepository,
+  CommunicationRepository,
   CreateAvailabilityInput,
   CreateBracketInput,
+  CreateAnnouncementInput,
+  CreateCommunicationTemplateInput,
+  CreateConversationThreadInput,
   ConfigureTournamentRegistrationFeeInput,
   CorrectMatchEventInput,
   CreateAthleteDraftInput,
@@ -37,6 +41,7 @@ import type {
   FinanceReportInput,
   GenerateScheduleInput,
   DocumentRepository,
+  LinkGuardianInput,
   ListDocumentReviewQueueInput,
   ListExpiringDocumentsInput,
   MatchRepository,
@@ -52,11 +57,13 @@ import type {
   SchoolRepository,
   SearchRepository,
   SchedulingRepository,
+  SendTemplateNotificationInput,
   SignWaiverInput,
   SyncRepository,
   TeamRepository,
   TournamentRepository,
   UpdateBracketSeedsInput,
+  UpsertNotificationPreferenceInput,
   UploadIdentityDocumentInput,
   RecordDocumentReviewInput,
   UserRepository,
@@ -351,6 +358,59 @@ export class MemorySchedulingRepository implements SchedulingRepository {
 
   exportOfficialPayouts(actor: AuthenticatedUser, tournamentId: string) {
     return this.data.exportOfficialPayouts(actor, tournamentId);
+  }
+}
+
+@Injectable()
+export class MemoryCommunicationRepository implements CommunicationRepository {
+  constructor(@Inject(AppDataStore) private readonly data: AppDataStore) {}
+
+  linkGuardian(actor: AuthenticatedUser, input: LinkGuardianInput) {
+    return this.data.linkGuardianToAthlete(actor, input);
+  }
+
+  getFamilyDashboard(actor: AuthenticatedUser, guardianUserId?: string) {
+    return this.data.getFamilyDashboard(actor, guardianUserId);
+  }
+
+  createAnnouncement(actor: AuthenticatedUser, input: CreateAnnouncementInput) {
+    return this.data.createAnnouncement(actor, input);
+  }
+
+  upsertPreference(actor: AuthenticatedUser, input: UpsertNotificationPreferenceInput) {
+    return this.data.upsertNotificationPreference(actor, input);
+  }
+
+  listPreferences(actor: AuthenticatedUser, userId?: string) {
+    return this.data.listNotificationPreferences(actor, userId);
+  }
+
+  createTemplate(actor: AuthenticatedUser, input: CreateCommunicationTemplateInput) {
+    return this.data.createCommunicationTemplate(actor, input);
+  }
+
+  sendTemplateNotification(actor: AuthenticatedUser, input: SendTemplateNotificationInput) {
+    return this.data.sendTemplateNotification(actor, input);
+  }
+
+  listInbox(actor: AuthenticatedUser, userId?: string) {
+    return this.data.listCommunicationInbox(actor, userId);
+  }
+
+  createThread(actor: AuthenticatedUser, input: CreateConversationThreadInput) {
+    return this.data.createConversationThread(actor, input);
+  }
+
+  postMessage(actor: AuthenticatedUser, threadId: string, body: string) {
+    return this.data.postThreadMessage(actor, threadId, body);
+  }
+
+  hideMessage(actor: AuthenticatedUser, messageId: string, reason: string) {
+    return this.data.hideThreadMessage(actor, messageId, reason);
+  }
+
+  listThread(actor: AuthenticatedUser, threadId: string) {
+    return this.data.listConversationThread(actor, threadId);
   }
 }
 

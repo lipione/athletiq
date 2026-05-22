@@ -137,6 +137,22 @@ pnpm -C apps/mobile lint
 pnpm -C apps/mobile build
 ```
 
+Communications, family experience, and notifications:
+
+- The API now has a dedicated communications module instead of overloading schedule-specific notifications. It supports guardian-athlete links, family dashboards, announcements, bilingual templates, notification preferences, delivery audit records, inbox reads, and moderated conversation threads.
+- A `guardian` role is available for direct family access. Guardian dashboards only expose linked athlete summaries and never expose private DOB, document storage, guardian contact, or internal review fields.
+- Optional delivery channels can be suppressed by user preference, while required compliance notices remain deliverable and auditable.
+- Team/family threads support participant-scoped reads, guardian replies, school-admin moderation, retained moderation records, and audit rows for moderation actions.
+- The web app includes a family communications surface at `/family/communications` with bilingual templates, moderated thread state, delivery queue status, and public-safe guardian operations copy.
+- The mobile app includes a deterministic offline family communications model for notices, preferences, message drafts, moderation retention, retryable outbound mutations, and backend-compatible request builders.
+- Verification covers guardian scoping, preference suppression, required notice delivery, bilingual rendering, moderation audit, web privacy safety, mobile idempotency, moderation retention, and retry selection:
+
+```bash
+pnpm -C apps/api test -- phase-16-communications.spec.ts
+pnpm -C apps/web test -- phase-16-web.test.tsx
+pnpm -C apps/mobile test -- phase-16-family.test.ts
+```
+
 Run checks:
 
 ```bash

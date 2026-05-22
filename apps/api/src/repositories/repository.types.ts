@@ -2,8 +2,16 @@ import type {
   AuditRecord,
   AthleteRecord,
   AuthenticatedUser,
+  AnnouncementRecord,
   BracketFormat,
   BracketView,
+  CommunicationCategory,
+  CommunicationChannel,
+  CommunicationLocale,
+  CommunicationNotificationRecord,
+  CommunicationPriority,
+  CommunicationTemplateRecord,
+  ConversationThreadRecord,
   DiscountCodeRecord,
   DocumentDuplicateCandidateRecord,
   DocumentExpiryRunResult,
@@ -16,6 +24,7 @@ import type {
   ExtractedIdentityFields,
   FinanceReportRecord,
   FacilityRecord,
+  FamilyDashboardRecord,
   AvailabilityResourceType,
   AvailabilityStatus,
   AvailabilityWindowRecord,
@@ -34,6 +43,10 @@ import type {
   OfficialPayoutExportRecord,
   OfficialProfileRecord,
   GuardianConsentRecord,
+  GuardianAthleteLinkRecord,
+  MessageModerationActionRecord,
+  NotificationDeliveryRecord,
+  NotificationPreferenceRecord,
   PaymentRecord,
   PublicBracketView,
   QrCodeRecord,
@@ -54,6 +67,7 @@ import type {
   VenueUnitType,
   WaiverSignatureRecord,
   WaiverTemplateRecord,
+  ThreadMessageRecord,
 } from '../common/store.js';
 import type { UserRole } from '../common/roles.js';
 
@@ -89,6 +103,7 @@ export const SYNC_REPOSITORY = Symbol('SYNC_REPOSITORY');
 export const SEARCH_REPOSITORY = Symbol('SEARCH_REPOSITORY');
 export const ANALYTICS_REPOSITORY = Symbol('ANALYTICS_REPOSITORY');
 export const WAIVER_REPOSITORY = Symbol('WAIVER_REPOSITORY');
+export const COMMUNICATION_REPOSITORY = Symbol('COMMUNICATION_REPOSITORY');
 
 export type UserRepositoryToken = typeof USER_REPOSITORY;
 export type AuthSessionRepositoryToken = typeof AUTH_SESSION_REPOSITORY;
@@ -106,6 +121,7 @@ export type SyncRepositoryToken = typeof SYNC_REPOSITORY;
 export type SearchRepositoryToken = typeof SEARCH_REPOSITORY;
 export type AnalyticsRepositoryToken = typeof ANALYTICS_REPOSITORY;
 export type WaiverRepositoryToken = typeof WAIVER_REPOSITORY;
+export type CommunicationRepositoryToken = typeof COMMUNICATION_REPOSITORY;
 
 export type CreateUserInput = {
   email: string;
@@ -445,6 +461,121 @@ export interface SchedulingRepository {
     actor: AuthenticatedUser,
     tournamentId: string,
   ): Promise<{ exports: OfficialPayoutExportRecord[] }>;
+}
+
+export type LinkGuardianInput = {
+  guardianUserId: string;
+  athleteId: string;
+  relationship: string;
+};
+
+export type CreateAnnouncementInput = {
+  title: string;
+  body: string;
+  category: CommunicationCategory;
+  priority?: CommunicationPriority;
+  locale?: CommunicationLocale;
+  schoolIds?: string[];
+  teamIds?: string[];
+  role?: UserRole;
+};
+
+export type UpsertNotificationPreferenceInput = {
+  userId?: string;
+  channel: CommunicationChannel;
+  category: CommunicationCategory;
+  enabled: boolean;
+  locale?: CommunicationLocale;
+  quietHoursStart?: string;
+  quietHoursEnd?: string;
+};
+
+export type CreateCommunicationTemplateInput = {
+  key: string;
+  category: CommunicationCategory;
+  required?: boolean;
+  variants: Record<CommunicationLocale, { subject: string; body: string }>;
+};
+
+export type SendTemplateNotificationInput = {
+  templateKey: string;
+  recipientUserId: string;
+  channel: CommunicationChannel;
+  locale?: CommunicationLocale;
+  variables?: Record<string, string>;
+  resourceType?: string;
+  resourceId?: string;
+};
+
+export type CreateConversationThreadInput = {
+  title: string;
+  schoolId: string;
+  teamId?: string;
+  athleteId?: string;
+  participantUserIds: string[];
+};
+
+export interface CommunicationRepository {
+  linkGuardian(
+    actor: AuthenticatedUser,
+    input: LinkGuardianInput,
+  ): Promise<GuardianAthleteLinkRecord>;
+  getFamilyDashboard(
+    actor: AuthenticatedUser,
+    guardianUserId?: string,
+  ): Promise<FamilyDashboardRecord>;
+  createAnnouncement(
+    actor: AuthenticatedUser,
+    input: CreateAnnouncementInput,
+  ): Promise<AnnouncementRecord>;
+  upsertPreference(
+    actor: AuthenticatedUser,
+    input: UpsertNotificationPreferenceInput,
+  ): Promise<NotificationPreferenceRecord>;
+  listPreferences(
+    actor: AuthenticatedUser,
+    userId?: string,
+  ): Promise<{ preferences: NotificationPreferenceRecord[] }>;
+  createTemplate(
+    actor: AuthenticatedUser,
+    input: CreateCommunicationTemplateInput,
+  ): Promise<CommunicationTemplateRecord>;
+  sendTemplateNotification(
+    actor: AuthenticatedUser,
+    input: SendTemplateNotificationInput,
+  ): Promise<{
+    notification: CommunicationNotificationRecord;
+    delivery: NotificationDeliveryRecord;
+  }>;
+  listInbox(
+    actor: AuthenticatedUser,
+    userId?: string,
+  ): Promise<{
+    notifications: CommunicationNotificationRecord[];
+    deliveries: NotificationDeliveryRecord[];
+  }>;
+  createThread(
+    actor: AuthenticatedUser,
+    input: CreateConversationThreadInput,
+  ): Promise<ConversationThreadRecord>;
+  postMessage(
+    actor: AuthenticatedUser,
+    threadId: string,
+    body: string,
+  ): Promise<ThreadMessageRecord>;
+  hideMessage(
+    actor: AuthenticatedUser,
+    messageId: string,
+    reason: string,
+  ): Promise<{ message: ThreadMessageRecord; moderation: MessageModerationActionRecord }>;
+  listThread(
+    actor: AuthenticatedUser,
+    threadId: string,
+  ): Promise<{
+    thread: ConversationThreadRecord;
+    messages: ThreadMessageRecord[];
+    moderationActions: MessageModerationActionRecord[];
+  }>;
 }
 
 export type CreateMembershipPlanInput = {

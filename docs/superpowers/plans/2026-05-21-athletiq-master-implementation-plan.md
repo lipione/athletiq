@@ -1021,8 +1021,8 @@ Production deployment should wait until Phase 20, but preview environments shoul
 - [x] Phase 14 completed with role dashboards, public pages, responsive UX, and accessibility checks.
 - [x] Phase 15 code-level plan written before production mobile implementation.
 - [x] Phase 15 completed with offline match-day app, QR scanner, secure auth, and conflict resolution.
-- [ ] Phase 16 code-level plan written before communications implementation.
-- [ ] Phase 16 completed with guardian experience, notifications, team communications, and bilingual templates.
+- [x] Phase 16 code-level plan written before communications implementation.
+- [x] Phase 16 completed with guardian experience, notifications, team communications, and bilingual templates.
 - [ ] Phase 17 code-level plan written before media/scouting implementation.
 - [ ] Phase 17 completed with secure media, highlights, evidence, and scouting workflows.
 - [ ] Phase 18 code-level plan written before advanced analytics implementation.

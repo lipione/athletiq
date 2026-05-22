@@ -130,6 +130,145 @@ export interface GuardianConsentRecord {
   createdAt: string;
 }
 
+export type CommunicationChannel = 'email' | 'sms' | 'push' | 'in_app';
+export type CommunicationCategory =
+  | 'schedule'
+  | 'verification'
+  | 'announcement'
+  | 'match_update'
+  | 'compliance'
+  | 'thread';
+export type CommunicationLocale = 'en' | 'ne';
+export type CommunicationPriority = 'normal' | 'urgent' | 'compliance';
+export type CommunicationDeliveryStatus = 'queued' | 'sent' | 'suppressed' | 'failed';
+export type ConversationThreadStatus = 'open' | 'locked' | 'archived';
+export type ThreadMessageStatus = 'visible' | 'hidden';
+
+export interface GuardianAthleteLinkRecord {
+  id: string;
+  guardianUserId: string;
+  athleteId: string;
+  schoolId: string;
+  relationship: string;
+  createdBy: string;
+  createdAt: string;
+}
+
+export interface AnnouncementRecord {
+  id: string;
+  title: string;
+  body: string;
+  category: CommunicationCategory;
+  priority: CommunicationPriority;
+  locale: CommunicationLocale;
+  target: {
+    schoolIds: string[];
+    teamIds: string[];
+    role?: UserRole;
+  };
+  createdBy: string;
+  createdAt: string;
+}
+
+export interface NotificationPreferenceRecord {
+  id: string;
+  userId: string;
+  channel: CommunicationChannel;
+  category: CommunicationCategory;
+  enabled: boolean;
+  locale: CommunicationLocale;
+  quietHoursStart?: string;
+  quietHoursEnd?: string;
+  updatedBy: string;
+  updatedAt: string;
+}
+
+export interface CommunicationTemplateRecord {
+  id: string;
+  key: string;
+  category: CommunicationCategory;
+  required: boolean;
+  variants: Record<CommunicationLocale, { subject: string; body: string }>;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CommunicationNotificationRecord {
+  id: string;
+  recipientUserId: string;
+  category: CommunicationCategory;
+  channel: CommunicationChannel;
+  locale: CommunicationLocale;
+  subject: string;
+  body: string;
+  required: boolean;
+  resourceType?: string;
+  resourceId?: string;
+  status: NotificationStatus;
+  createdBy: string;
+  createdAt: string;
+  readAt?: string;
+}
+
+export interface NotificationDeliveryRecord {
+  id: string;
+  notificationId: string;
+  channel: CommunicationChannel;
+  provider: 'stub' | 'email' | 'sms' | 'push';
+  status: CommunicationDeliveryStatus;
+  attempt: number;
+  error?: string;
+  createdAt: string;
+}
+
+export interface ConversationThreadRecord {
+  id: string;
+  title: string;
+  schoolId: string;
+  teamId?: string;
+  athleteId?: string;
+  participantUserIds: string[];
+  status: ConversationThreadStatus;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ThreadMessageRecord {
+  id: string;
+  threadId: string;
+  authorUserId: string;
+  body: string;
+  status: ThreadMessageStatus;
+  createdAt: string;
+  hiddenAt?: string;
+  hiddenBy?: string;
+  moderationReason?: string;
+}
+
+export interface MessageModerationActionRecord {
+  id: string;
+  threadId: string;
+  messageId: string;
+  action: 'hide';
+  reason: string;
+  actedBy: string;
+  actedAt: string;
+}
+
+export interface FamilyDashboardRecord {
+  guardian: Pick<UserRecord, 'id' | 'email'>;
+  athletes: Array<
+    Pick<AthleteRecord, 'id' | 'fullName' | 'schoolId' | 'athletiqId' | 'status'> & {
+      relationship: string;
+    }
+  >;
+  notifications: CommunicationNotificationRecord[];
+  announcements: AnnouncementRecord[];
+  threads: ConversationThreadRecord[];
+}
+
 export interface TournamentRecord {
   id: string;
   name: string;
@@ -843,6 +982,15 @@ export class AppDataStore {
   private schools = new Map<string, SchoolRecord>();
   private athletes = new Map<string, AthleteRecord>();
   private guardianConsents = new Map<string, GuardianConsentRecord>();
+  private guardianAthleteLinks = new Map<string, GuardianAthleteLinkRecord>();
+  private announcements = new Map<string, AnnouncementRecord>();
+  private notificationPreferences = new Map<string, NotificationPreferenceRecord>();
+  private communicationTemplates = new Map<string, CommunicationTemplateRecord>();
+  private communicationNotifications = new Map<string, CommunicationNotificationRecord>();
+  private notificationDeliveries = new Map<string, NotificationDeliveryRecord>();
+  private conversationThreads = new Map<string, ConversationThreadRecord>();
+  private threadMessages = new Map<string, ThreadMessageRecord>();
+  private messageModerationActions = new Map<string, MessageModerationActionRecord>();
   private tournaments = new Map<string, TournamentRecord>();
   private membershipPlans = new Map<string, MembershipPlanRecord>();
   private schoolMemberships = new Map<string, SchoolMembershipRecord>();
@@ -890,6 +1038,15 @@ export class AppDataStore {
       this.schools.clear();
       this.athletes.clear();
       this.guardianConsents.clear();
+      this.guardianAthleteLinks.clear();
+      this.announcements.clear();
+      this.notificationPreferences.clear();
+      this.communicationTemplates.clear();
+      this.communicationNotifications.clear();
+      this.notificationDeliveries.clear();
+      this.conversationThreads.clear();
+      this.threadMessages.clear();
+      this.messageModerationActions.clear();
       this.tournaments.clear();
       this.membershipPlans.clear();
       this.schoolMemberships.clear();
@@ -4486,6 +4643,506 @@ export class AppDataStore {
     });
   }
 
+  linkGuardianToAthlete(
+    actor: AuthenticatedUser,
+    input: {
+      guardianUserId: string;
+      athleteId: string;
+      relationship: string;
+    },
+  ) {
+    return this.withWrite(() => {
+      const guardian = this.users.get(input.guardianUserId);
+      if (!guardian || !guardian.roles.includes('guardian')) {
+        throw new NotFoundException('Guardian user not found');
+      }
+      const athlete = this.athletes.get(input.athleteId);
+      if (!athlete) {
+        throw new NotFoundException('Athlete not found');
+      }
+      if (actor.role !== 'super_admin' && !actor.schoolIds.includes(athlete.schoolId)) {
+        throw new ForbiddenException('Cannot link guardian outside your school scope');
+      }
+      const existing = [...this.guardianAthleteLinks.values()].find(
+        (link) => link.guardianUserId === guardian.id && link.athleteId === athlete.id,
+      );
+      if (existing) {
+        return { ...existing };
+      }
+      const now = new Date().toISOString();
+      const link: GuardianAthleteLinkRecord = {
+        id: this.nextId('gal'),
+        guardianUserId: guardian.id,
+        athleteId: athlete.id,
+        schoolId: athlete.schoolId,
+        relationship: input.relationship,
+        createdBy: actor.id,
+        createdAt: now,
+      };
+      this.guardianAthleteLinks.set(link.id, link);
+      if (!guardian.schoolIds.includes(athlete.schoolId)) {
+        guardian.schoolIds = [...guardian.schoolIds, athlete.schoolId];
+        guardian.updatedAt = now;
+        this.users.set(guardian.id, guardian);
+      }
+      this.addAuditLog({
+        actorUserId: actor.id,
+        action: 'communications.guardian_linked',
+        resource: 'athlete',
+        resourceId: athlete.id,
+        metadata: { guardianUserId: guardian.id, schoolId: athlete.schoolId },
+      });
+      return { ...link };
+    });
+  }
+
+  getFamilyDashboard(actor: AuthenticatedUser, guardianUserId?: string) {
+    return this.readOperation(() => {
+      const targetUserId = guardianUserId ?? actor.id;
+      if (actor.role !== 'super_admin' && actor.id !== targetUserId) {
+        throw new ForbiddenException('Cannot read another guardian dashboard');
+      }
+      const guardian = this.users.get(targetUserId);
+      if (!guardian || !guardian.roles.includes('guardian')) {
+        throw new NotFoundException('Guardian user not found');
+      }
+      const links = [...this.guardianAthleteLinks.values()].filter(
+        (link) => link.guardianUserId === guardian.id,
+      );
+      const schoolIds = new Set(links.map((link) => link.schoolId));
+      const athletes = links
+        .map((link) => {
+          const athlete = this.athletes.get(link.athleteId);
+          return athlete
+            ? {
+                id: athlete.id,
+                fullName: athlete.fullName,
+                schoolId: athlete.schoolId,
+                status: athlete.status,
+                ...(athlete.athletiqId ? { athletiqId: athlete.athletiqId } : {}),
+                relationship: link.relationship,
+              }
+            : undefined;
+        })
+        .filter((athlete): athlete is FamilyDashboardRecord['athletes'][number] =>
+          Boolean(athlete),
+        );
+      const announcements = [...this.announcements.values()].filter((announcement) =>
+        announcement.target.schoolIds.some((schoolId) => schoolIds.has(schoolId)),
+      );
+      const notifications = [...this.communicationNotifications.values()].filter(
+        (notification) => notification.recipientUserId === guardian.id,
+      );
+      const threads = [...this.conversationThreads.values()].filter((thread) =>
+        thread.participantUserIds.includes(guardian.id),
+      );
+      return {
+        guardian: { id: guardian.id, email: guardian.email },
+        athletes,
+        announcements: announcements.map((announcement) => this.cloneAnnouncement(announcement)),
+        notifications: notifications.map((notification) => ({ ...notification })),
+        threads: threads.map((thread) => this.cloneThread(thread)),
+      };
+    });
+  }
+
+  createAnnouncement(
+    actor: AuthenticatedUser,
+    input: {
+      title: string;
+      body: string;
+      category: CommunicationCategory;
+      priority?: CommunicationPriority;
+      locale?: CommunicationLocale;
+      schoolIds?: string[];
+      teamIds?: string[];
+      role?: UserRole;
+    },
+  ) {
+    return this.withWrite(() => {
+      const schoolIds = [...new Set(input.schoolIds ?? [])];
+      for (const schoolId of schoolIds) {
+        if (!this.schools.has(schoolId)) {
+          throw new NotFoundException('School not found');
+        }
+        if (actor.role !== 'super_admin' && !actor.schoolIds.includes(schoolId)) {
+          throw new ForbiddenException('Cannot announce outside your school scope');
+        }
+      }
+      const announcement: AnnouncementRecord = {
+        id: this.nextId('ann'),
+        title: input.title,
+        body: input.body,
+        category: input.category,
+        priority: input.priority ?? 'normal',
+        locale: input.locale ?? 'en',
+        target: {
+          schoolIds,
+          teamIds: [...new Set(input.teamIds ?? [])],
+          ...(input.role ? { role: input.role } : {}),
+        },
+        createdBy: actor.id,
+        createdAt: new Date().toISOString(),
+      };
+      this.announcements.set(announcement.id, announcement);
+      this.addAuditLog({
+        actorUserId: actor.id,
+        action: 'communications.announcement_created',
+        resource: 'announcement',
+        resourceId: announcement.id,
+        metadata: { schoolIds: schoolIds.join(','), category: announcement.category },
+      });
+      return this.cloneAnnouncement(announcement);
+    });
+  }
+
+  upsertNotificationPreference(
+    actor: AuthenticatedUser,
+    input: {
+      userId?: string;
+      channel: CommunicationChannel;
+      category: CommunicationCategory;
+      enabled: boolean;
+      locale?: CommunicationLocale;
+      quietHoursStart?: string;
+      quietHoursEnd?: string;
+    },
+  ) {
+    return this.withWrite(() => {
+      const userId = input.userId ?? actor.id;
+      if (actor.role !== 'super_admin' && actor.id !== userId) {
+        throw new ForbiddenException('Cannot update another user preference');
+      }
+      if (!this.users.has(userId)) {
+        throw new NotFoundException('User not found');
+      }
+      const key = `${userId}:${input.channel}:${input.category}`;
+      const existing = [...this.notificationPreferences.values()].find(
+        (preference) =>
+          preference.userId === userId &&
+          preference.channel === input.channel &&
+          preference.category === input.category,
+      );
+      const preference: NotificationPreferenceRecord = {
+        id: existing?.id ?? this.nextId('pref'),
+        userId,
+        channel: input.channel,
+        category: input.category,
+        enabled: input.enabled,
+        locale: input.locale ?? existing?.locale ?? 'en',
+        ...(input.quietHoursStart ? { quietHoursStart: input.quietHoursStart } : {}),
+        ...(input.quietHoursEnd ? { quietHoursEnd: input.quietHoursEnd } : {}),
+        updatedBy: actor.id,
+        updatedAt: new Date().toISOString(),
+      };
+      this.notificationPreferences.set(key, preference);
+      this.addAuditLog({
+        actorUserId: actor.id,
+        action: 'communications.preference_updated',
+        resource: 'notification_preference',
+        resourceId: preference.id,
+        metadata: { userId, channel: preference.channel, category: preference.category },
+      });
+      return { ...preference };
+    });
+  }
+
+  listNotificationPreferences(actor: AuthenticatedUser, userId?: string) {
+    return this.readOperation(() => {
+      const targetUserId = userId ?? actor.id;
+      if (actor.role !== 'super_admin' && actor.id !== targetUserId) {
+        throw new ForbiddenException('Cannot read another user preference');
+      }
+      return {
+        preferences: [...this.notificationPreferences.values()]
+          .filter((preference) => preference.userId === targetUserId)
+          .map((preference) => ({ ...preference })),
+      };
+    });
+  }
+
+  createCommunicationTemplate(
+    actor: AuthenticatedUser,
+    input: {
+      key: string;
+      category: CommunicationCategory;
+      required?: boolean;
+      variants: Record<CommunicationLocale, { subject: string; body: string }>;
+    },
+  ) {
+    return this.withWrite(() => {
+      const existing = [...this.communicationTemplates.values()].find(
+        (template) => template.key === input.key,
+      );
+      const now = new Date().toISOString();
+      const template: CommunicationTemplateRecord = {
+        id: existing?.id ?? this.nextId('tmpl'),
+        key: input.key,
+        category: input.category,
+        required: input.required ?? false,
+        variants: {
+          en: { ...input.variants.en },
+          ne: { ...input.variants.ne },
+        },
+        createdBy: existing?.createdBy ?? actor.id,
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now,
+      };
+      this.communicationTemplates.set(template.id, template);
+      this.addAuditLog({
+        actorUserId: actor.id,
+        action: 'communications.template_saved',
+        resource: 'communication_template',
+        resourceId: template.id,
+        metadata: { key: template.key, required: template.required },
+      });
+      return this.cloneTemplate(template);
+    });
+  }
+
+  sendTemplateNotification(
+    actor: AuthenticatedUser,
+    input: {
+      templateKey: string;
+      recipientUserId: string;
+      channel: CommunicationChannel;
+      locale?: CommunicationLocale;
+      variables?: Record<string, string>;
+      resourceType?: string;
+      resourceId?: string;
+    },
+  ) {
+    return this.withWrite(() => {
+      const recipient = this.users.get(input.recipientUserId);
+      if (!recipient) {
+        throw new NotFoundException('Recipient not found');
+      }
+      const template = [...this.communicationTemplates.values()].find(
+        (candidate) => candidate.key === input.templateKey,
+      );
+      if (!template) {
+        throw new NotFoundException('Communication template not found');
+      }
+      const locale = input.locale ?? this.preferredLocale(recipient.id, template.category) ?? 'en';
+      const variant = template.variants[locale] ?? template.variants.en;
+      const subject = this.renderTemplate(variant.subject, input.variables ?? {});
+      const body = this.renderTemplate(variant.body, input.variables ?? {});
+      const preference = [...this.notificationPreferences.values()].find(
+        (candidate) =>
+          candidate.userId === recipient.id &&
+          candidate.channel === input.channel &&
+          candidate.category === template.category,
+      );
+      const suppressed = !template.required && preference?.enabled === false;
+      const now = new Date().toISOString();
+      const notification: CommunicationNotificationRecord = {
+        id: this.nextId('cnotif'),
+        recipientUserId: recipient.id,
+        category: template.category,
+        channel: input.channel,
+        locale,
+        subject,
+        body,
+        required: template.required,
+        ...(input.resourceType ? { resourceType: input.resourceType } : {}),
+        ...(input.resourceId ? { resourceId: input.resourceId } : {}),
+        status: 'pending',
+        createdBy: actor.id,
+        createdAt: now,
+      };
+      const delivery: NotificationDeliveryRecord = {
+        id: this.nextId('delivery'),
+        notificationId: notification.id,
+        channel: input.channel,
+        provider: input.channel === 'in_app' ? 'stub' : input.channel,
+        status: suppressed ? 'suppressed' : 'queued',
+        attempt: suppressed ? 0 : 1,
+        ...(suppressed ? { error: 'suppressed_by_preference' } : {}),
+        createdAt: now,
+      };
+      this.communicationNotifications.set(notification.id, notification);
+      this.notificationDeliveries.set(delivery.id, delivery);
+      this.addAuditLog({
+        actorUserId: actor.id,
+        action: 'communications.notification_created',
+        resource: 'communication_notification',
+        resourceId: notification.id,
+        metadata: {
+          recipientUserId: recipient.id,
+          templateKey: template.key,
+          deliveryStatus: delivery.status,
+        },
+      });
+      return { notification: { ...notification }, delivery: { ...delivery } };
+    });
+  }
+
+  listCommunicationInbox(actor: AuthenticatedUser, userId?: string) {
+    return this.readOperation(() => {
+      const targetUserId = userId ?? actor.id;
+      if (actor.role !== 'super_admin' && actor.id !== targetUserId) {
+        throw new ForbiddenException('Cannot read another user inbox');
+      }
+      return {
+        notifications: [...this.communicationNotifications.values()]
+          .filter((notification) => notification.recipientUserId === targetUserId)
+          .map((notification) => ({ ...notification })),
+        deliveries: [...this.notificationDeliveries.values()]
+          .filter((delivery) => {
+            const notification = this.communicationNotifications.get(delivery.notificationId);
+            return notification?.recipientUserId === targetUserId;
+          })
+          .map((delivery) => ({ ...delivery })),
+      };
+    });
+  }
+
+  createConversationThread(
+    actor: AuthenticatedUser,
+    input: {
+      title: string;
+      schoolId: string;
+      teamId?: string;
+      athleteId?: string;
+      participantUserIds: string[];
+    },
+  ) {
+    return this.withWrite(() => {
+      if (!this.schools.has(input.schoolId)) {
+        throw new NotFoundException('School not found');
+      }
+      if (actor.role !== 'super_admin' && !actor.schoolIds.includes(input.schoolId)) {
+        throw new ForbiddenException('Cannot create thread outside your school scope');
+      }
+      const participants = [...new Set([actor.id, ...input.participantUserIds])];
+      for (const userId of participants) {
+        if (!this.users.has(userId)) {
+          throw new NotFoundException('Thread participant not found');
+        }
+      }
+      const now = new Date().toISOString();
+      const thread: ConversationThreadRecord = {
+        id: this.nextId('thread'),
+        title: input.title,
+        schoolId: input.schoolId,
+        ...(input.teamId ? { teamId: input.teamId } : {}),
+        ...(input.athleteId ? { athleteId: input.athleteId } : {}),
+        participantUserIds: participants,
+        status: 'open',
+        createdBy: actor.id,
+        createdAt: now,
+        updatedAt: now,
+      };
+      this.conversationThreads.set(thread.id, thread);
+      this.addAuditLog({
+        actorUserId: actor.id,
+        action: 'communications.thread_created',
+        resource: 'conversation_thread',
+        resourceId: thread.id,
+        metadata: { schoolId: thread.schoolId, participantCount: participants.length },
+      });
+      return this.cloneThread(thread);
+    });
+  }
+
+  postThreadMessage(actor: AuthenticatedUser, threadId: string, body: string) {
+    return this.withWrite(() => {
+      const thread = this.conversationThreads.get(threadId);
+      if (!thread) {
+        throw new NotFoundException('Thread not found');
+      }
+      if (thread.status !== 'open') {
+        throw new BadRequestException('Thread is not open');
+      }
+      if (!thread.participantUserIds.includes(actor.id) && actor.role !== 'super_admin') {
+        throw new ForbiddenException('Cannot post to this thread');
+      }
+      const now = new Date().toISOString();
+      const message: ThreadMessageRecord = {
+        id: this.nextId('msg'),
+        threadId,
+        authorUserId: actor.id,
+        body,
+        status: 'visible',
+        createdAt: now,
+      };
+      this.threadMessages.set(message.id, message);
+      this.conversationThreads.set(thread.id, { ...thread, updatedAt: now });
+      this.addAuditLog({
+        actorUserId: actor.id,
+        action: 'communications.message_posted',
+        resource: 'thread_message',
+        resourceId: message.id,
+        metadata: { threadId },
+      });
+      return { ...message };
+    });
+  }
+
+  hideThreadMessage(actor: AuthenticatedUser, messageId: string, reason: string) {
+    return this.withWrite(() => {
+      const message = this.threadMessages.get(messageId);
+      if (!message) {
+        throw new NotFoundException('Thread message not found');
+      }
+      const thread = this.conversationThreads.get(message.threadId);
+      if (!thread) {
+        throw new NotFoundException('Thread not found');
+      }
+      if (actor.role !== 'super_admin' && !actor.schoolIds.includes(thread.schoolId)) {
+        throw new ForbiddenException('Cannot moderate this thread');
+      }
+      const now = new Date().toISOString();
+      const updated: ThreadMessageRecord = {
+        ...message,
+        status: 'hidden',
+        hiddenAt: now,
+        hiddenBy: actor.id,
+        moderationReason: reason,
+      };
+      const action: MessageModerationActionRecord = {
+        id: this.nextId('mod'),
+        threadId: thread.id,
+        messageId: message.id,
+        action: 'hide',
+        reason,
+        actedBy: actor.id,
+        actedAt: now,
+      };
+      this.threadMessages.set(updated.id, updated);
+      this.messageModerationActions.set(action.id, action);
+      this.addAuditLog({
+        actorUserId: actor.id,
+        action: 'communications.message_hidden',
+        resource: 'thread_message',
+        resourceId: message.id,
+        metadata: { threadId: thread.id, reason },
+      });
+      return { message: { ...updated }, moderation: { ...action } };
+    });
+  }
+
+  listConversationThread(actor: AuthenticatedUser, threadId: string) {
+    return this.readOperation(() => {
+      const thread = this.conversationThreads.get(threadId);
+      if (!thread) {
+        throw new NotFoundException('Thread not found');
+      }
+      if (!thread.participantUserIds.includes(actor.id) && actor.role !== 'super_admin') {
+        throw new ForbiddenException('Cannot read this thread');
+      }
+      return {
+        thread: this.cloneThread(thread),
+        messages: [...this.threadMessages.values()]
+          .filter((message) => message.threadId === thread.id)
+          .map((message) => ({ ...message })),
+        moderationActions: [...this.messageModerationActions.values()]
+          .filter((action) => action.threadId === thread.id)
+          .map((action) => ({ ...action })),
+      };
+    });
+  }
+
   private getActiveMatchEvents(matchId: string) {
     return [...this.matchEvents.values()]
       .filter((event) => event.matchId === matchId)
@@ -5747,6 +6404,49 @@ export class AppDataStore {
       ...node,
       sourceNodeIds: [...node.sourceNodeIds],
     };
+  }
+
+  private cloneAnnouncement(announcement: AnnouncementRecord): AnnouncementRecord {
+    return {
+      ...announcement,
+      target: {
+        schoolIds: [...announcement.target.schoolIds],
+        teamIds: [...announcement.target.teamIds],
+        ...(announcement.target.role ? { role: announcement.target.role } : {}),
+      },
+    };
+  }
+
+  private cloneThread(thread: ConversationThreadRecord): ConversationThreadRecord {
+    return {
+      ...thread,
+      participantUserIds: [...thread.participantUserIds],
+    };
+  }
+
+  private cloneTemplate(template: CommunicationTemplateRecord): CommunicationTemplateRecord {
+    return {
+      ...template,
+      variants: {
+        en: { ...template.variants.en },
+        ne: { ...template.variants.ne },
+      },
+    };
+  }
+
+  private preferredLocale(
+    userId: string,
+    category: CommunicationCategory,
+  ): CommunicationLocale | undefined {
+    return [...this.notificationPreferences.values()].find(
+      (preference) => preference.userId === userId && preference.category === category,
+    )?.locale;
+  }
+
+  private renderTemplate(template: string, variables: Record<string, string>) {
+    return template.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_, key: string) => {
+      return variables[key] ?? '';
+    });
   }
 
   private async readOperation<T>(operation: () => T): Promise<T> {

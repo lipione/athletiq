@@ -23,6 +23,7 @@ import { BillingModule } from './billing/billing.module.js';
 import { WaiversModule } from './waivers/waivers.module.js';
 import { BracketsModule } from './brackets/brackets.module.js';
 import { SchedulingModule } from './scheduling/scheduling.module.js';
+import { CommunicationsModule } from './communications/communications.module.js';
 
 @Module({
   imports: [
@@ -44,6 +45,7 @@ import { SchedulingModule } from './scheduling/scheduling.module.js';
     WaiversModule,
     BracketsModule,
     SchedulingModule,
+    CommunicationsModule,
     TenancyModule,
     DatabaseModule,
     RepositoryModule,

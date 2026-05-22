@@ -65,6 +65,7 @@ import {
   generateSingleEliminationNodes,
 } from '../brackets/bracket-engine.js';
 import { addMinutes, minutesBetween, overlaps } from '../scheduling/scheduling-engine.js';
+import { AppDataStore } from '../common/store.js';
 import type {
   AuthenticatedUser,
   BracketFormat,
@@ -136,12 +137,16 @@ import type {
   BillingRepository,
   BracketRepository,
   BracketSeedInput,
+  CommunicationRepository,
   ConfigureTournamentRegistrationFeeInput,
+  CreateAnnouncementInput,
   CreateAvailabilityInput,
   CorrectMatchEventInput,
   CreateDocumentReviewLinkInput,
   CreateAthleteDraftInput,
   CreateBracketInput,
+  CreateCommunicationTemplateInput,
+  CreateConversationThreadInput,
   CreateDiscountCodeInput,
   CreateFacilityInput,
   CreateMembershipPlanInput,
@@ -163,6 +168,7 @@ import type {
   FederationOverrideInput,
   FinanceReportInput,
   GenerateScheduleInput,
+  LinkGuardianInput,
   ListDocumentReviewQueueInput,
   ListExpiringDocumentsInput,
   MatchRepository,
@@ -182,11 +188,13 @@ import type {
   SchoolRepository,
   SearchRepository,
   SchedulingRepository,
+  SendTemplateNotificationInput,
   SignWaiverInput,
   SyncRepository,
   TeamRepository,
   TournamentRepository,
   UpdateBracketSeedsInput,
+  UpsertNotificationPreferenceInput,
   UserRepository,
   UploadIdentityDocumentInput,
   WaiverRepository,
@@ -5286,6 +5294,59 @@ export class PostgresDocumentRepository
     const target = new Date(parsed);
     target.setUTCHours(23, 59, 59, 999);
     return target;
+  }
+}
+
+@Injectable()
+export class PostgresCommunicationRepository implements CommunicationRepository {
+  constructor(@Inject(AppDataStore) private readonly data: AppDataStore) {}
+
+  linkGuardian(actor: AuthenticatedUser, input: LinkGuardianInput) {
+    return this.data.linkGuardianToAthlete(actor, input);
+  }
+
+  getFamilyDashboard(actor: AuthenticatedUser, guardianUserId?: string) {
+    return this.data.getFamilyDashboard(actor, guardianUserId);
+  }
+
+  createAnnouncement(actor: AuthenticatedUser, input: CreateAnnouncementInput) {
+    return this.data.createAnnouncement(actor, input);
+  }
+
+  upsertPreference(actor: AuthenticatedUser, input: UpsertNotificationPreferenceInput) {
+    return this.data.upsertNotificationPreference(actor, input);
+  }
+
+  listPreferences(actor: AuthenticatedUser, userId?: string) {
+    return this.data.listNotificationPreferences(actor, userId);
+  }
+
+  createTemplate(actor: AuthenticatedUser, input: CreateCommunicationTemplateInput) {
+    return this.data.createCommunicationTemplate(actor, input);
+  }
+
+  sendTemplateNotification(actor: AuthenticatedUser, input: SendTemplateNotificationInput) {
+    return this.data.sendTemplateNotification(actor, input);
+  }
+
+  listInbox(actor: AuthenticatedUser, userId?: string) {
+    return this.data.listCommunicationInbox(actor, userId);
+  }
+
+  createThread(actor: AuthenticatedUser, input: CreateConversationThreadInput) {
+    return this.data.createConversationThread(actor, input);
+  }
+
+  postMessage(actor: AuthenticatedUser, threadId: string, body: string) {
+    return this.data.postThreadMessage(actor, threadId, body);
+  }
+
+  hideMessage(actor: AuthenticatedUser, messageId: string, reason: string) {
+    return this.data.hideThreadMessage(actor, messageId, reason);
+  }
+
+  listThread(actor: AuthenticatedUser, threadId: string) {
+    return this.data.listConversationThread(actor, threadId);
   }
 }
 
