@@ -1906,6 +1906,180 @@ export const federationOverrides = pgTable(
   ],
 );
 
+export const analyticsReportDrafts = pgTable(
+  'analytics_report_drafts',
+  {
+    id: varchar('id', { length: 64 }).primaryKey(),
+    tenantId: varchar('tenant_id', { length: 64 })
+      .notNull()
+      .references(() => tenants.id),
+    reportType: varchar('report_type', { length: 64 }).notNull(),
+    scope: varchar('scope', { length: 128 }).notNull(),
+    locale: varchar('locale', { length: 16 }).notNull(),
+    status: varchar('status', { length: 32 }).notNull(),
+    requiresApproval: boolean('requires_approval').notNull().default(true),
+    sections: jsonb('sections').notNull(),
+    createdBy: varchar('created_by', { length: 64 })
+      .notNull()
+      .references(() => users.id),
+    approvedBy: varchar('approved_by', { length: 64 }).references(() => users.id),
+    approvalNote: text('approval_note'),
+    approvedAt: timestamp('approved_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('analytics_report_drafts_tenant_id_idx').on(table.tenantId),
+    index('analytics_report_drafts_status_idx').on(table.status),
+    index('analytics_report_drafts_created_at_idx').on(table.createdAt),
+    uniqueIndex('analytics_report_drafts_tenant_id_id_unique').on(table.tenantId, table.id),
+  ],
+);
+
+export const spreadsheetImports = pgTable(
+  'spreadsheet_imports',
+  {
+    id: varchar('id', { length: 64 }).primaryKey(),
+    tenantId: varchar('tenant_id', { length: 64 })
+      .notNull()
+      .references(() => tenants.id),
+    sourceName: varchar('source_name', { length: 255 }).notNull(),
+    entityType: varchar('entity_type', { length: 64 }).notNull(),
+    status: varchar('status', { length: 32 }).notNull(),
+    totalRows: integer('total_rows').notNull(),
+    validRows: integer('valid_rows').notNull(),
+    invalidRows: integer('invalid_rows').notNull(),
+    errors: jsonb('errors').notNull(),
+    rows: jsonb('rows').notNull(),
+    committedRows: integer('committed_rows'),
+    committedBy: varchar('committed_by', { length: 64 }).references(() => users.id),
+    committedAt: timestamp('committed_at', { withTimezone: true }),
+    rollbackReason: text('rollback_reason'),
+    rolledBackBy: varchar('rolled_back_by', { length: 64 }).references(() => users.id),
+    rolledBackAt: timestamp('rolled_back_at', { withTimezone: true }),
+    createdBy: varchar('created_by', { length: 64 })
+      .notNull()
+      .references(() => users.id),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('spreadsheet_imports_tenant_id_idx').on(table.tenantId),
+    index('spreadsheet_imports_status_idx').on(table.status),
+    index('spreadsheet_imports_created_at_idx').on(table.createdAt),
+    uniqueIndex('spreadsheet_imports_tenant_id_id_unique').on(table.tenantId, table.id),
+  ],
+);
+
+export const partnerApiKeys = pgTable(
+  'partner_api_keys',
+  {
+    id: varchar('id', { length: 64 }).primaryKey(),
+    tenantId: varchar('tenant_id', { length: 64 })
+      .notNull()
+      .references(() => tenants.id),
+    partnerName: varchar('partner_name', { length: 255 }).notNull(),
+    keyPrefix: varchar('key_prefix', { length: 32 }).notNull(),
+    secretHash: varchar('secret_hash', { length: 128 }).notNull(),
+    scopes: text('scopes').array().notNull(),
+    status: varchar('status', { length: 32 }).notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    createdBy: varchar('created_by', { length: 64 })
+      .notNull()
+      .references(() => users.id),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('partner_api_keys_tenant_id_idx').on(table.tenantId),
+    index('partner_api_keys_status_idx').on(table.status),
+    uniqueIndex('partner_api_keys_key_prefix_unique').on(table.keyPrefix),
+  ],
+);
+
+export const exportBundles = pgTable(
+  'export_bundles',
+  {
+    id: varchar('id', { length: 64 }).primaryKey(),
+    tenantId: varchar('tenant_id', { length: 64 })
+      .notNull()
+      .references(() => tenants.id),
+    tournamentId: varchar('tournament_id', { length: 64 })
+      .notNull()
+      .references(() => tournaments.id),
+    formats: text('formats').array().notNull(),
+    include: text('include').array().notNull(),
+    status: varchar('status', { length: 32 }).notNull(),
+    downloadUrl: text('download_url').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    createdBy: varchar('created_by', { length: 64 })
+      .notNull()
+      .references(() => users.id),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('export_bundles_tenant_id_idx').on(table.tenantId),
+    index('export_bundles_tournament_id_idx').on(table.tournamentId),
+    index('export_bundles_expires_at_idx').on(table.expiresAt),
+    foreignKey({
+      name: 'export_bundles_tenant_tournament_fk',
+      columns: [table.tenantId, table.tournamentId],
+      foreignColumns: [tournaments.tenantId, tournaments.id],
+    }),
+  ],
+);
+
+export const webhookSubscriptions = pgTable(
+  'webhook_subscriptions',
+  {
+    id: varchar('id', { length: 64 }).primaryKey(),
+    tenantId: varchar('tenant_id', { length: 64 })
+      .notNull()
+      .references(() => tenants.id),
+    url: text('url').notNull(),
+    events: text('events').array().notNull(),
+    secretLabel: varchar('secret_label', { length: 128 }),
+    status: varchar('status', { length: 32 }).notNull(),
+    createdBy: varchar('created_by', { length: 64 })
+      .notNull()
+      .references(() => users.id),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('webhook_subscriptions_tenant_id_idx').on(table.tenantId),
+    index('webhook_subscriptions_status_idx').on(table.status),
+    uniqueIndex('webhook_subscriptions_tenant_id_id_unique').on(table.tenantId, table.id),
+  ],
+);
+
+export const webhookDeliveries = pgTable(
+  'webhook_deliveries',
+  {
+    id: varchar('id', { length: 64 }).primaryKey(),
+    tenantId: varchar('tenant_id', { length: 64 })
+      .notNull()
+      .references(() => tenants.id),
+    webhookId: varchar('webhook_id', { length: 64 })
+      .notNull()
+      .references(() => webhookSubscriptions.id),
+    event: varchar('event', { length: 128 }).notNull(),
+    status: varchar('status', { length: 32 }).notNull(),
+    attempt: integer('attempt').notNull(),
+    responseCode: integer('response_code').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('webhook_deliveries_tenant_id_idx').on(table.tenantId),
+    index('webhook_deliveries_webhook_id_idx').on(table.webhookId),
+    index('webhook_deliveries_created_at_idx').on(table.createdAt),
+    foreignKey({
+      name: 'webhook_deliveries_tenant_webhook_fk',
+      columns: [table.tenantId, table.webhookId],
+      foreignColumns: [webhookSubscriptions.tenantId, webhookSubscriptions.id],
+    }),
+  ],
+);
+
 export const auditLogs = pgTable(
   'audit_logs',
   {

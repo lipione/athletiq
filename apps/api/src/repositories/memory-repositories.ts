@@ -13,13 +13,19 @@ import type {
   CreateAvailabilityInput,
   CreateBracketInput,
   CreateAnnouncementInput,
+  CreateAnalyticsReportDraftInput,
   CreateCommunicationTemplateInput,
   CreateConversationThreadInput,
   ConfigureTournamentRegistrationFeeInput,
   CorrectMatchEventInput,
   CreateAthleteDraftInput,
+  CreateExportBundleInput,
   CreateDiscountCodeInput,
   CreateFacilityInput,
+  CreatePartnerApiKeyInput,
+  CreateWebhookSubscriptionInput,
+  CreateWebhookTestDeliveryInput,
+  CommitSpreadsheetImportInput,
   CreateMembershipPlanInput,
   CreateRefreshSessionInput,
   CreateMatchEventInput,
@@ -41,6 +47,7 @@ import type {
   FinanceReportInput,
   GenerateScheduleInput,
   DocumentRepository,
+  IntegrationRepository,
   LinkGuardianInput,
   ListDocumentReviewQueueInput,
   ListExpiringDocumentsInput,
@@ -53,12 +60,14 @@ import type {
   RecordManualPaymentInput,
   RefundPaymentInput,
   RespondAssignmentInput,
+  RollbackSpreadsheetImportInput,
   RotateRefreshSessionInput,
   SchoolRepository,
   SearchRepository,
   SchedulingRepository,
   SendTemplateNotificationInput,
   SignWaiverInput,
+  SpreadsheetImportPreviewInput,
   SyncRepository,
   TeamRepository,
   TournamentRepository,
@@ -675,6 +684,14 @@ export class MemoryAnalyticsRepository implements AnalyticsRepository {
     return this.data.listAthletes();
   }
 
+  listMatches(tournamentId?: string) {
+    return this.data.listMatches(tournamentId);
+  }
+
+  listMatchEvents(matchId: string) {
+    return this.data.listMatchEvents(matchId);
+  }
+
   findTournamentById(tournamentId: string) {
     return this.data.getTournament(tournamentId);
   }
@@ -683,7 +700,77 @@ export class MemoryAnalyticsRepository implements AnalyticsRepository {
     return this.data.getTournamentLeaderboard(tournamentId, limit);
   }
 
+  createReportDraft(input: CreateAnalyticsReportDraftInput) {
+    return this.data.createAnalyticsReportDraft(input.actor, {
+      reportType: input.reportType,
+      scope: input.scope,
+      locale: input.locale,
+      sections: input.sections,
+    });
+  }
+
+  approveReportDraft(actor: AuthenticatedUser, draftId: string, note?: string) {
+    return this.data.approveAnalyticsReportDraft(actor, draftId, note);
+  }
+
   recordFederationOverride(actor: AuthenticatedUser, input: FederationOverrideInput) {
     return this.data.addFederationOverride(actor, input);
+  }
+}
+
+@Injectable()
+export class MemoryIntegrationRepository implements IntegrationRepository {
+  constructor(@Inject(AppDataStore) private readonly data: AppDataStore) {}
+
+  previewSpreadsheetImport(input: SpreadsheetImportPreviewInput) {
+    return this.data.createSpreadsheetImportPreview(input.actor, {
+      sourceName: input.sourceName,
+      entityType: input.entityType,
+      rows: input.rows,
+    });
+  }
+
+  commitSpreadsheetImport(input: CommitSpreadsheetImportInput) {
+    return this.data.commitSpreadsheetImport(input.actor, input.importId);
+  }
+
+  rollbackSpreadsheetImport(input: RollbackSpreadsheetImportInput) {
+    return this.data.rollbackSpreadsheetImport(input.actor, input.importId, input.reason);
+  }
+
+  createPartnerApiKey(input: CreatePartnerApiKeyInput) {
+    return this.data.createPartnerApiKey(input.actor, {
+      partnerName: input.partnerName,
+      scopes: input.scopes,
+      ...(input.expiresAt ? { expiresAt: input.expiresAt } : {}),
+    });
+  }
+
+  getPublicTournamentFixtures(tournamentId: string) {
+    return Promise.resolve(this.data.getPublicTournamentFixtures(tournamentId));
+  }
+
+  getPublicTournamentResults(tournamentId: string) {
+    return Promise.resolve(this.data.getPublicTournamentResults(tournamentId));
+  }
+
+  createExportBundle(input: CreateExportBundleInput) {
+    return this.data.createExportBundle(input.actor, {
+      tournamentId: input.tournamentId,
+      formats: input.formats,
+      include: input.include,
+    });
+  }
+
+  createWebhookSubscription(input: CreateWebhookSubscriptionInput) {
+    return this.data.createWebhookSubscription(input.actor, {
+      url: input.url,
+      events: input.events,
+      ...(input.secretLabel ? { secretLabel: input.secretLabel } : {}),
+    });
+  }
+
+  createWebhookTestDelivery(input: CreateWebhookTestDeliveryInput) {
+    return this.data.createWebhookTestDelivery(input.actor, input.webhookId, input.event);
   }
 }

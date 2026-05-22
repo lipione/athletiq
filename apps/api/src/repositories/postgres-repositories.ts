@@ -1,4 +1,4 @@
-import { randomBytes } from 'crypto';
+import { createHash, randomBytes } from 'crypto';
 import {
   BadRequestException,
   ForbiddenException,
@@ -11,6 +11,7 @@ import {
 import { and, eq, inArray, lte, ne } from 'drizzle-orm';
 import {
   athletes,
+  analyticsReportDrafts,
   auditLogs,
   availabilityWindows,
   bracketNodes,
@@ -23,6 +24,7 @@ import {
   documentReviewFlags,
   documentReviewLinks,
   documentReviews,
+  exportBundles,
   facilities,
   federationOverrides,
   guardianConsents,
@@ -36,6 +38,7 @@ import {
   officialAssignments,
   officialPayoutExports,
   officialProfiles,
+  partnerApiKeys,
   payments,
   qrCodes,
   refreshSessions,
@@ -44,6 +47,7 @@ import {
   schoolUsers,
   schoolMemberships,
   schools,
+  spreadsheetImports,
   standingRows,
   syncMutations,
   teamMembers,
@@ -56,6 +60,8 @@ import {
   venueUnits,
   waiverSignatures,
   waiverTemplates,
+  webhookDeliveries,
+  webhookSubscriptions,
 } from '@athletiq/db';
 import { DatabaseService } from '../database/database.service.js';
 import {
@@ -67,6 +73,7 @@ import {
 import { addMinutes, minutesBetween, overlaps } from '../scheduling/scheduling-engine.js';
 import { AppDataStore } from '../common/store.js';
 import type {
+  AnalyticsReportDraftRecord,
   AuthenticatedUser,
   BracketFormat,
   BracketNodeRecord,
@@ -89,8 +96,11 @@ import type {
   AvailabilityWindowRecord,
   FacilityRecord,
   FinanceReportRecord,
+  ExportBundleRecord,
   IdentityDocumentRecord,
   IdentityDocumentStatus,
+  ImportErrorRecord,
+  ImportEntityType,
   InvoiceInstallmentRecord,
   InvoiceRecord,
   MembershipPlanRecord,
@@ -108,12 +118,14 @@ import type {
   OfficialPayoutExportRecord,
   OfficialProfileRecord,
   PaymentRecord,
+  PartnerApiKeyRecord,
   PublicBracketView,
   QrCodeRecord,
   RefundRecord,
   ScheduleNotificationRecord,
   SearchResults,
   SchoolMembershipRecord,
+  SpreadsheetImportRecord,
   StandingRowRecord,
   SyncMutationRecord,
   TournamentAthleteStat,
@@ -125,6 +137,8 @@ import type {
   VenueUnitRecord,
   WaiverSignatureRecord,
   WaiverTemplateRecord,
+  WebhookDeliveryRecord,
+  WebhookSubscriptionRecord,
 } from '../common/store.js';
 import type { UserRole } from '../common/roles.js';
 import type {
@@ -140,7 +154,9 @@ import type {
   CommunicationRepository,
   ConfigureTournamentRegistrationFeeInput,
   CreateAnnouncementInput,
+  CreateAnalyticsReportDraftInput,
   CreateAvailabilityInput,
+  CreateExportBundleInput,
   CorrectMatchEventInput,
   CreateDocumentReviewLinkInput,
   CreateAthleteDraftInput,
@@ -153,6 +169,7 @@ import type {
   CreateMatchEventInput,
   CreateMatchInput,
   CreateOfficialProfileInput,
+  CreatePartnerApiKeyInput,
   CreateRefreshSessionInput,
   CreateSchoolInput,
   CreateTeamInput,
@@ -162,12 +179,15 @@ import type {
   CreateVenueUnitInput,
   CreateUserInput,
   CreateWaiverTemplateInput,
+  CreateWebhookSubscriptionInput,
+  CreateWebhookTestDeliveryInput,
   DocumentRepository,
   EnsureTournamentWaiversInput,
   ExtractIdentityDocumentInput,
   FederationOverrideInput,
   FinanceReportInput,
   GenerateScheduleInput,
+  IntegrationRepository,
   LinkGuardianInput,
   ListDocumentReviewQueueInput,
   ListExpiringDocumentsInput,
@@ -190,6 +210,7 @@ import type {
   SchedulingRepository,
   SendTemplateNotificationInput,
   SignWaiverInput,
+  SpreadsheetImportPreviewInput,
   SyncRepository,
   TeamRepository,
   TournamentRepository,
@@ -198,6 +219,8 @@ import type {
   UserRepository,
   UploadIdentityDocumentInput,
   WaiverRepository,
+  CommitSpreadsheetImportInput,
+  RollbackSpreadsheetImportInput,
 } from './repository.types.js';
 
 type TenantRow = typeof tenants.$inferSelect;
@@ -242,6 +265,12 @@ type OfficialPayoutExportRow = typeof officialPayoutExports.$inferSelect;
 type QrCodeRow = typeof qrCodes.$inferSelect;
 type SyncMutationRow = typeof syncMutations.$inferSelect;
 type RefreshSessionRow = typeof refreshSessions.$inferSelect;
+type AnalyticsReportDraftRow = typeof analyticsReportDrafts.$inferSelect;
+type SpreadsheetImportRow = typeof spreadsheetImports.$inferSelect;
+type PartnerApiKeyRow = typeof partnerApiKeys.$inferSelect;
+type ExportBundleRow = typeof exportBundles.$inferSelect;
+type WebhookSubscriptionRow = typeof webhookSubscriptions.$inferSelect;
+type WebhookDeliveryRow = typeof webhookDeliveries.$inferSelect;
 type DatabaseExecutor = DatabaseService['db'];
 
 const DEFAULT_USER_ID = 'usr_super_admin';
@@ -266,6 +295,13 @@ abstract class PostgresRepositoryBase {
 
   protected generateAthletiqId() {
     return `ATQ-${this.randomToken(3)}-${this.randomToken(6)}-${this.randomToken(3)}`;
+  }
+
+  protected requireReturned<T>(row: T | undefined): T {
+    if (!row) {
+      throw new Error('Database write did not return a row');
+    }
+    return row;
   }
 
   protected toIso(value: Date | string) {
@@ -5351,6 +5387,392 @@ export class PostgresCommunicationRepository implements CommunicationRepository 
 }
 
 @Injectable()
+export class PostgresIntegrationRepository
+  extends PostgresRepositoryBase
+  implements IntegrationRepository
+{
+  constructor(@Inject(DatabaseService) database: DatabaseService) {
+    super(database);
+  }
+
+  async previewSpreadsheetImport(input: SpreadsheetImportPreviewInput) {
+    await this.ensurePlatformTenant();
+    const errors = input.rows.flatMap((row, rowIndex) =>
+      this.validateImportRow(input.entityType, row, rowIndex),
+    );
+    const invalidRowIndexes = new Set(errors.map((error) => error.rowIndex));
+    const [createdRow] = await this.db
+      .insert(spreadsheetImports)
+      .values({
+        id: this.nextId('imp'),
+        tenantId: 'platform',
+        sourceName: input.sourceName,
+        entityType: input.entityType,
+        status: 'previewed',
+        totalRows: input.rows.length,
+        validRows: input.rows.length - invalidRowIndexes.size,
+        invalidRows: invalidRowIndexes.size,
+        errors,
+        rows: input.rows,
+        createdBy: input.actor.id,
+      })
+      .returning();
+    const created = this.requireReturned(createdRow);
+    await this.addAuditLog({
+      tenantId: 'platform',
+      actorUserId: input.actor.id,
+      action: 'integrations.import_previewed',
+      resource: 'spreadsheet_import',
+      resourceId: created.id,
+      metadata: { entityType: created.entityType, validRows: created.validRows },
+    });
+    return this.mapSpreadsheetImport(created);
+  }
+
+  async commitSpreadsheetImport(input: CommitSpreadsheetImportInput) {
+    const [found] = await this.db
+      .select()
+      .from(spreadsheetImports)
+      .where(eq(spreadsheetImports.id, input.importId))
+      .limit(1);
+    if (!found) {
+      throw new NotFoundException('Import not found');
+    }
+    if (found.status !== 'previewed') {
+      throw new BadRequestException('Only previewed imports can be committed');
+    }
+    const now = new Date();
+    const [updatedRow] = await this.db
+      .update(spreadsheetImports)
+      .set({
+        status: 'committed',
+        committedRows: found.validRows,
+        committedBy: input.actor.id,
+        committedAt: now,
+        updatedAt: now,
+      })
+      .where(eq(spreadsheetImports.id, input.importId))
+      .returning();
+    const updated = this.requireReturned(updatedRow);
+    await this.addAuditLog({
+      tenantId: 'platform',
+      actorUserId: input.actor.id,
+      action: 'integrations.import_committed',
+      resource: 'spreadsheet_import',
+      resourceId: input.importId,
+      metadata: { committedRows: found.validRows },
+    });
+    return this.mapSpreadsheetImport(updated);
+  }
+
+  async rollbackSpreadsheetImport(input: RollbackSpreadsheetImportInput) {
+    const [found] = await this.db
+      .select()
+      .from(spreadsheetImports)
+      .where(eq(spreadsheetImports.id, input.importId))
+      .limit(1);
+    if (!found) {
+      throw new NotFoundException('Import not found');
+    }
+    const now = new Date();
+    const [updatedRow] = await this.db
+      .update(spreadsheetImports)
+      .set({
+        status: 'rolled_back',
+        rollbackReason: input.reason,
+        rolledBackBy: input.actor.id,
+        rolledBackAt: now,
+        updatedAt: now,
+      })
+      .where(eq(spreadsheetImports.id, input.importId))
+      .returning();
+    const updated = this.requireReturned(updatedRow);
+    await this.addAuditLog({
+      tenantId: 'platform',
+      actorUserId: input.actor.id,
+      action: 'integrations.import_rolled_back',
+      resource: 'spreadsheet_import',
+      resourceId: input.importId,
+      metadata: { reason: input.reason },
+    });
+    return this.mapSpreadsheetImport(updated);
+  }
+
+  async createPartnerApiKey(input: CreatePartnerApiKeyInput) {
+    await this.ensurePlatformTenant();
+    const secret = `atlq_live_${this.randomToken(32)}`;
+    const [createdRow] = await this.db
+      .insert(partnerApiKeys)
+      .values({
+        id: this.nextId('pak'),
+        tenantId: 'platform',
+        partnerName: input.partnerName,
+        keyPrefix: secret.slice(0, 18),
+        secretHash: `sha256:${createHash('sha256').update(secret).digest('hex')}`,
+        scopes: input.scopes,
+        status: 'active',
+        ...(input.expiresAt ? { expiresAt: new Date(input.expiresAt) } : {}),
+        createdBy: input.actor.id,
+      })
+      .returning();
+    const created = this.requireReturned(createdRow);
+    await this.addAuditLog({
+      tenantId: 'platform',
+      actorUserId: input.actor.id,
+      action: 'integrations.api_key_created',
+      resource: 'partner_api_key',
+      resourceId: created.id,
+      metadata: { partnerName: created.partnerName },
+    });
+    return {
+      id: created.id,
+      partnerName: created.partnerName,
+      keyPrefix: created.keyPrefix,
+      scopes: [...created.scopes],
+      status: created.status as PartnerApiKeyRecord['status'],
+      ...(created.expiresAt ? { expiresAt: this.toIso(created.expiresAt) } : {}),
+      createdBy: created.createdBy,
+      createdAt: this.toIso(created.createdAt),
+      secret,
+    };
+  }
+
+  async getPublicTournamentFixtures(tournamentId: string) {
+    const tournament = await this.requirePublicTournament(tournamentId);
+    const [matchRows, teamRows] = await Promise.all([
+      this.db.select().from(matches).where(eq(matches.tournamentId, tournamentId)),
+      this.db.select().from(teams).where(eq(teams.tournamentId, tournamentId)),
+    ]);
+    const teamNames = new Map(teamRows.map((team) => [team.id, team.name]));
+    return {
+      tournamentId,
+      tournamentName: tournament.name,
+      sport: tournament.sport,
+      matches: matchRows
+        .sort((first, second) => first.scheduledAt.localeCompare(second.scheduledAt))
+        .map((match) => ({
+          matchId: match.id,
+          tournamentId,
+          scheduledAt: match.scheduledAt,
+          status: match.status,
+          homeTeamId: match.homeTeamId,
+          awayTeamId: match.awayTeamId,
+          homeTeamName: teamNames.get(match.homeTeamId) ?? 'TBD',
+          awayTeamName: teamNames.get(match.awayTeamId) ?? 'TBD',
+        })),
+    };
+  }
+
+  async getPublicTournamentResults(tournamentId: string) {
+    const fixtures = await this.getPublicTournamentFixtures(tournamentId);
+    const matchRows = await this.db
+      .select()
+      .from(matches)
+      .where(eq(matches.tournamentId, tournamentId));
+    const scores = new Map(matchRows.map((match) => [match.id, match]));
+    return {
+      tournamentId,
+      tournamentName: fixtures.tournamentName,
+      results: fixtures.matches
+        .map((match) => {
+          const source = scores.get(String(match.matchId));
+          return {
+            ...match,
+            homeScore: source?.homeScore ?? null,
+            awayScore: source?.awayScore ?? null,
+          };
+        })
+        .filter((match) => match.status === 'verified'),
+    };
+  }
+
+  async createExportBundle(input: CreateExportBundleInput) {
+    const tournament = await this.requirePublicTournament(input.tournamentId);
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + 60 * 60 * 1000);
+    const [createdRow] = await this.db
+      .insert(exportBundles)
+      .values({
+        id: this.nextId('exp'),
+        tenantId: tournament.tenantId,
+        tournamentId: input.tournamentId,
+        formats: input.formats,
+        include: input.include,
+        status: 'ready',
+        downloadUrl: `/api/integrations/export-bundles/${input.tournamentId}/${this.randomToken(12)}`,
+        expiresAt,
+        createdBy: input.actor.id,
+      })
+      .returning();
+    const created = this.requireReturned(createdRow);
+    return this.mapExportBundle(created);
+  }
+
+  async createWebhookSubscription(input: CreateWebhookSubscriptionInput) {
+    await this.ensurePlatformTenant();
+    const [createdRow] = await this.db
+      .insert(webhookSubscriptions)
+      .values({
+        id: this.nextId('whk'),
+        tenantId: 'platform',
+        url: input.url,
+        events: input.events,
+        ...(input.secretLabel ? { secretLabel: input.secretLabel } : {}),
+        status: 'active',
+        createdBy: input.actor.id,
+      })
+      .returning();
+    const created = this.requireReturned(createdRow);
+    return this.mapWebhookSubscription(created);
+  }
+
+  async createWebhookTestDelivery(input: CreateWebhookTestDeliveryInput) {
+    const [webhook] = await this.db
+      .select()
+      .from(webhookSubscriptions)
+      .where(eq(webhookSubscriptions.id, input.webhookId))
+      .limit(1);
+    if (!webhook) {
+      throw new NotFoundException('Webhook subscription not found');
+    }
+    if (!webhook.events.includes(input.event)) {
+      throw new BadRequestException('Webhook is not subscribed to this event');
+    }
+    const [createdRow] = await this.db
+      .insert(webhookDeliveries)
+      .values({
+        id: this.nextId('whd'),
+        tenantId: webhook.tenantId,
+        webhookId: input.webhookId,
+        event: input.event,
+        status: 'delivered',
+        attempt: 1,
+        responseCode: 202,
+      })
+      .returning();
+    const created = this.requireReturned(createdRow);
+    await this.addAuditLog({
+      tenantId: webhook.tenantId,
+      actorUserId: input.actor.id,
+      action: 'integrations.webhook_test_delivered',
+      resource: 'webhook_subscription',
+      resourceId: input.webhookId,
+      metadata: { event: input.event },
+    });
+    return this.mapWebhookDelivery(created);
+  }
+
+  private async requirePublicTournament(tournamentId: string) {
+    const [tournament] = await this.db
+      .select()
+      .from(tournaments)
+      .where(eq(tournaments.id, tournamentId))
+      .limit(1);
+    if (!tournament || tournament.status === 'draft' || tournament.status === 'cancelled') {
+      throw new NotFoundException('Tournament not found');
+    }
+    return tournament;
+  }
+
+  private mapSpreadsheetImport(row: SpreadsheetImportRow): SpreadsheetImportRecord {
+    return {
+      id: row.id,
+      sourceName: row.sourceName,
+      entityType: row.entityType as ImportEntityType,
+      status: row.status as SpreadsheetImportRecord['status'],
+      totalRows: row.totalRows,
+      validRows: row.validRows,
+      invalidRows: row.invalidRows,
+      errors: row.errors as ImportErrorRecord[],
+      rows: row.rows as SpreadsheetImportRecord['rows'],
+      ...(row.committedRows !== null ? { committedRows: row.committedRows } : {}),
+      ...(row.committedBy ? { committedBy: row.committedBy } : {}),
+      ...(row.committedAt ? { committedAt: this.toIso(row.committedAt) } : {}),
+      ...(row.rollbackReason ? { rollbackReason: row.rollbackReason } : {}),
+      ...(row.rolledBackBy ? { rolledBackBy: row.rolledBackBy } : {}),
+      ...(row.rolledBackAt ? { rolledBackAt: this.toIso(row.rolledBackAt) } : {}),
+      createdBy: row.createdBy,
+      createdAt: this.toIso(row.createdAt),
+      updatedAt: this.toIso(row.updatedAt),
+    };
+  }
+
+  private mapPartnerApiKey(row: PartnerApiKeyRow): PartnerApiKeyRecord {
+    return {
+      id: row.id,
+      partnerName: row.partnerName,
+      keyPrefix: row.keyPrefix,
+      secretHash: row.secretHash,
+      scopes: [...row.scopes],
+      status: row.status as PartnerApiKeyRecord['status'],
+      ...(row.expiresAt ? { expiresAt: this.toIso(row.expiresAt) } : {}),
+      createdBy: row.createdBy,
+      createdAt: this.toIso(row.createdAt),
+    };
+  }
+
+  private mapExportBundle(row: ExportBundleRow): ExportBundleRecord {
+    return {
+      id: row.id,
+      tournamentId: row.tournamentId,
+      formats: [...row.formats],
+      include: [...row.include],
+      status: row.status as ExportBundleRecord['status'],
+      downloadUrl: row.downloadUrl,
+      expiresAt: this.toIso(row.expiresAt),
+      createdBy: row.createdBy,
+      createdAt: this.toIso(row.createdAt),
+    };
+  }
+
+  private mapWebhookSubscription(row: WebhookSubscriptionRow): WebhookSubscriptionRecord {
+    return {
+      id: row.id,
+      url: row.url,
+      events: [...row.events],
+      ...(row.secretLabel ? { secretLabel: row.secretLabel } : {}),
+      status: row.status as WebhookSubscriptionRecord['status'],
+      createdBy: row.createdBy,
+      createdAt: this.toIso(row.createdAt),
+      updatedAt: this.toIso(row.updatedAt),
+    };
+  }
+
+  private mapWebhookDelivery(row: WebhookDeliveryRow): WebhookDeliveryRecord {
+    return {
+      id: row.id,
+      webhookId: row.webhookId,
+      event: row.event,
+      status: row.status as WebhookDeliveryRecord['status'],
+      attempt: row.attempt,
+      responseCode: row.responseCode,
+      createdAt: this.toIso(row.createdAt),
+    };
+  }
+
+  private validateImportRow(
+    entityType: ImportEntityType,
+    row: Record<string, string | number | boolean | null>,
+    rowIndex: number,
+  ) {
+    const errors: ImportErrorRecord[] = [];
+    const requiredFields =
+      entityType === 'athletes'
+        ? ['schoolId', 'fullName']
+        : entityType === 'schools'
+          ? ['name']
+          : ['tournamentId', 'schoolId', 'name'];
+    for (const field of requiredFields) {
+      const value = row[field];
+      if (value === undefined || value === null || String(value).trim() === '') {
+        errors.push({ rowIndex, field, message: `${field} is required` });
+      }
+    }
+    return errors;
+  }
+}
+
+@Injectable()
 export class PostgresBracketRepository extends PostgresRepositoryBase implements BracketRepository {
   constructor(@Inject(DatabaseService) database: DatabaseService) {
     super(database);
@@ -7137,6 +7559,18 @@ export class PostgresAnalyticsRepository
     return rows.map((row) => this.mapAthlete(row));
   }
 
+  async listMatches(tournamentId?: string) {
+    const rows = await this.db.select().from(matches);
+    return rows
+      .filter((match) => (tournamentId ? match.tournamentId === tournamentId : true))
+      .map((row) => this.mapMatch(row));
+  }
+
+  async listMatchEvents(matchId: string) {
+    const rows = await this.db.select().from(matchEvents).where(eq(matchEvents.matchId, matchId));
+    return rows.map((row) => this.mapMatchEvent(row));
+  }
+
   async findTournamentById(tournamentId: string) {
     const [found] = await this.db
       .select()
@@ -7148,6 +7582,92 @@ export class PostgresAnalyticsRepository
 
   getTournamentLeaderboard(tournamentId: string, limit?: number) {
     return new PostgresTournamentRepository(this.database).getLeaderboard(tournamentId, limit);
+  }
+
+  async createReportDraft(input: CreateAnalyticsReportDraftInput) {
+    await this.ensurePlatformTenant();
+    const draftId = this.nextId('ard');
+    const [createdRow] = await this.db
+      .insert(analyticsReportDrafts)
+      .values({
+        id: draftId,
+        tenantId: 'platform',
+        reportType: input.reportType,
+        scope: input.scope,
+        locale: input.locale,
+        status: 'draft',
+        requiresApproval: true,
+        sections: input.sections,
+        createdBy: input.actor.id,
+      })
+      .returning();
+    const created = this.requireReturned(createdRow);
+
+    await this.addAuditLog({
+      tenantId: 'platform',
+      actorUserId: input.actor.id,
+      action: 'analytics.report_draft_created',
+      resource: 'analytics_report',
+      resourceId: draftId,
+      metadata: {
+        reportType: input.reportType,
+        scope: input.scope,
+      },
+    });
+    return this.mapAnalyticsReportDraft(created);
+  }
+
+  async approveReportDraft(actor: AuthenticatedUser, draftId: string, note?: string) {
+    const [draft] = await this.db
+      .select()
+      .from(analyticsReportDrafts)
+      .where(eq(analyticsReportDrafts.id, draftId))
+      .limit(1);
+    if (!draft) {
+      throw new NotFoundException('Analytics report draft not found');
+    }
+    const [updatedRow] = await this.db
+      .update(analyticsReportDrafts)
+      .set({
+        status: 'approved',
+        approvedBy: actor.id,
+        approvedAt: new Date(),
+        ...(note ? { approvalNote: note } : {}),
+        updatedAt: new Date(),
+      })
+      .where(eq(analyticsReportDrafts.id, draftId))
+      .returning();
+    const updated = this.requireReturned(updatedRow);
+    await this.addAuditLog({
+      tenantId: 'platform',
+      actorUserId: actor.id,
+      action: 'analytics.report_draft_approved',
+      resource: 'analytics_report',
+      resourceId: draftId,
+      metadata: note ? { note } : {},
+    });
+    return this.mapAnalyticsReportDraft(updated);
+  }
+
+  private mapAnalyticsReportDraft(row: AnalyticsReportDraftRow): AnalyticsReportDraftRecord {
+    return {
+      id: row.id,
+      reportType: row.reportType as AnalyticsReportDraftRecord['reportType'],
+      scope: row.scope,
+      locale: row.locale as AnalyticsReportDraftRecord['locale'],
+      status: row.status as AnalyticsReportDraftRecord['status'],
+      requiresApproval: row.requiresApproval,
+      createdBy: row.createdBy,
+      createdAt: this.toIso(row.createdAt),
+      updatedAt: this.toIso(row.updatedAt),
+      ...(row.approvedBy ? { approvedBy: row.approvedBy } : {}),
+      ...(row.approvedAt ? { approvedAt: this.toIso(row.approvedAt) } : {}),
+      ...(row.approvalNote ? { approvalNote: row.approvalNote } : {}),
+      sections: (row.sections as AnalyticsReportDraftRecord['sections']).map((section) => ({
+        ...section,
+        metrics: { ...section.metrics },
+      })),
+    };
   }
 
   async recordFederationOverride(actor: AuthenticatedUser, input: FederationOverrideInput) {

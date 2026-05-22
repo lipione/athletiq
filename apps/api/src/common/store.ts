@@ -1,4 +1,4 @@
-import { randomBytes } from 'crypto';
+import { createHash, randomBytes } from 'crypto';
 import {
   BadRequestException,
   ForbiddenException,
@@ -287,6 +287,109 @@ export interface TournamentRecord {
   registrationFeeAmount?: number;
   registrationFeeCurrency?: string;
   registrationFeeRequiredBeforeApproval?: boolean;
+}
+
+export type AnalyticsReportStatus = 'draft' | 'approved' | 'rejected';
+
+export interface AnalyticsReportSectionRecord {
+  title: string;
+  body: string;
+  metrics: Record<string, string | number | boolean | null>;
+}
+
+export interface AnalyticsReportDraftRecord {
+  id: string;
+  reportType: 'federation_summary' | 'school_development' | 'data_quality';
+  scope: string;
+  locale: 'en' | 'ne';
+  status: AnalyticsReportStatus;
+  requiresApproval: boolean;
+  sections: AnalyticsReportSectionRecord[];
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+  approvedBy?: string;
+  approvedAt?: string;
+  approvalNote?: string;
+}
+
+export type ImportEntityType = 'athletes' | 'schools' | 'teams';
+export type ImportStatus = 'previewed' | 'committed' | 'rolled_back';
+export type PartnerApiKeyStatus = 'active' | 'revoked';
+export type ExportBundleStatus = 'ready' | 'expired';
+export type WebhookStatus = 'active' | 'paused';
+export type WebhookDeliveryStatus = 'delivered' | 'failed';
+
+export interface ImportErrorRecord {
+  rowIndex: number;
+  field: string;
+  message: string;
+}
+
+export interface SpreadsheetImportRecord {
+  id: string;
+  sourceName: string;
+  entityType: ImportEntityType;
+  status: ImportStatus;
+  totalRows: number;
+  validRows: number;
+  invalidRows: number;
+  errors: ImportErrorRecord[];
+  rows: Array<Record<string, string | number | boolean | null>>;
+  committedRows?: number;
+  committedBy?: string;
+  committedAt?: string;
+  rollbackReason?: string;
+  rolledBackBy?: string;
+  rolledBackAt?: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PartnerApiKeyRecord {
+  id: string;
+  partnerName: string;
+  keyPrefix: string;
+  secretHash: string;
+  scopes: string[];
+  status: PartnerApiKeyStatus;
+  expiresAt?: string;
+  createdBy: string;
+  createdAt: string;
+}
+
+export interface ExportBundleRecord {
+  id: string;
+  tournamentId: string;
+  formats: string[];
+  include: string[];
+  status: ExportBundleStatus;
+  downloadUrl: string;
+  expiresAt: string;
+  createdBy: string;
+  createdAt: string;
+}
+
+export interface WebhookSubscriptionRecord {
+  id: string;
+  url: string;
+  events: string[];
+  secretLabel?: string;
+  status: WebhookStatus;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WebhookDeliveryRecord {
+  id: string;
+  webhookId: string;
+  event: string;
+  status: WebhookDeliveryStatus;
+  attempt: number;
+  responseCode: number;
+  createdAt: string;
 }
 
 export interface MembershipPlanRecord {
@@ -1020,6 +1123,12 @@ export class AppDataStore {
   private officialAssignments = new Map<string, OfficialAssignmentRecord>();
   private scheduleNotifications = new Map<string, ScheduleNotificationRecord>();
   private officialPayoutExports = new Map<string, OfficialPayoutExportRecord>();
+  private analyticsReportDrafts = new Map<string, AnalyticsReportDraftRecord>();
+  private spreadsheetImports = new Map<string, SpreadsheetImportRecord>();
+  private partnerApiKeys = new Map<string, PartnerApiKeyRecord>();
+  private exportBundles = new Map<string, ExportBundleRecord>();
+  private webhookSubscriptions = new Map<string, WebhookSubscriptionRecord>();
+  private webhookDeliveries = new Map<string, WebhookDeliveryRecord>();
   private teams = new Map<string, TournamentTeamRecord>();
   private matches = new Map<string, MatchRecord>();
   private matchEvents = new Map<string, MatchEventRecord>();
@@ -1076,6 +1185,12 @@ export class AppDataStore {
       this.officialAssignments.clear();
       this.scheduleNotifications.clear();
       this.officialPayoutExports.clear();
+      this.analyticsReportDrafts.clear();
+      this.spreadsheetImports.clear();
+      this.partnerApiKeys.clear();
+      this.exportBundles.clear();
+      this.webhookSubscriptions.clear();
+      this.webhookDeliveries.clear();
       this.teams.clear();
       this.matches.clear();
       this.matchEvents.clear();
@@ -4168,6 +4283,333 @@ export class AppDataStore {
     });
   }
 
+  createAnalyticsReportDraft(
+    actor: AuthenticatedUser,
+    payload: Omit<
+      AnalyticsReportDraftRecord,
+      'id' | 'status' | 'requiresApproval' | 'createdBy' | 'createdAt' | 'updatedAt'
+    >,
+  ) {
+    return this.withWrite(() => {
+      const now = new Date().toISOString();
+      const draft: AnalyticsReportDraftRecord = {
+        id: this.nextId('ard'),
+        ...payload,
+        status: 'draft',
+        requiresApproval: true,
+        createdBy: actor.id,
+        createdAt: now,
+        updatedAt: now,
+      };
+      this.analyticsReportDrafts.set(draft.id, draft);
+      this.addAuditLog({
+        actorUserId: actor.id,
+        action: 'analytics.report_draft_created',
+        resource: 'analytics_report',
+        resourceId: draft.id,
+        metadata: {
+          reportType: draft.reportType,
+          scope: draft.scope,
+        },
+      });
+      return this.cloneAnalyticsReportDraft(draft);
+    });
+  }
+
+  approveAnalyticsReportDraft(actor: AuthenticatedUser, draftId: string, note?: string) {
+    return this.withWrite(() => {
+      const draft = this.analyticsReportDrafts.get(draftId);
+      if (!draft) {
+        throw new NotFoundException('Analytics report draft not found');
+      }
+      const now = new Date().toISOString();
+      const approved: AnalyticsReportDraftRecord = {
+        ...draft,
+        status: 'approved',
+        approvedBy: actor.id,
+        approvedAt: now,
+        ...(note ? { approvalNote: note } : {}),
+        updatedAt: now,
+      };
+      this.analyticsReportDrafts.set(draftId, approved);
+      this.addAuditLog({
+        actorUserId: actor.id,
+        action: 'analytics.report_draft_approved',
+        resource: 'analytics_report',
+        resourceId: draftId,
+        metadata: note ? { note } : {},
+      });
+      return this.cloneAnalyticsReportDraft(approved);
+    });
+  }
+
+  createSpreadsheetImportPreview(
+    actor: AuthenticatedUser,
+    payload: {
+      sourceName: string;
+      entityType: ImportEntityType;
+      rows: Array<Record<string, string | number | boolean | null>>;
+    },
+  ) {
+    return this.withWrite(() => {
+      const now = new Date().toISOString();
+      const errors = payload.rows.flatMap((row, rowIndex) =>
+        this.validateImportRow(payload.entityType, row, rowIndex),
+      );
+      const invalidRowIndexes = new Set(errors.map((error) => error.rowIndex));
+      const record: SpreadsheetImportRecord = {
+        id: this.nextId('imp'),
+        sourceName: payload.sourceName,
+        entityType: payload.entityType,
+        status: 'previewed',
+        totalRows: payload.rows.length,
+        validRows: payload.rows.length - invalidRowIndexes.size,
+        invalidRows: invalidRowIndexes.size,
+        errors,
+        rows: payload.rows.map((row) => ({ ...row })),
+        createdBy: actor.id,
+        createdAt: now,
+        updatedAt: now,
+      };
+      this.spreadsheetImports.set(record.id, record);
+      this.addAuditLog({
+        actorUserId: actor.id,
+        action: 'integrations.import_previewed',
+        resource: 'spreadsheet_import',
+        resourceId: record.id,
+        metadata: { entityType: record.entityType, validRows: record.validRows },
+      });
+      return this.cloneSpreadsheetImport(record);
+    });
+  }
+
+  commitSpreadsheetImport(actor: AuthenticatedUser, importId: string) {
+    return this.withWrite(() => {
+      const record = this.spreadsheetImports.get(importId);
+      if (!record) {
+        throw new NotFoundException('Import not found');
+      }
+      if (record.status !== 'previewed') {
+        throw new BadRequestException('Only previewed imports can be committed');
+      }
+      const now = new Date().toISOString();
+      const committed: SpreadsheetImportRecord = {
+        ...record,
+        status: 'committed',
+        committedRows: record.validRows,
+        committedBy: actor.id,
+        committedAt: now,
+        updatedAt: now,
+      };
+      this.spreadsheetImports.set(importId, committed);
+      this.addAuditLog({
+        actorUserId: actor.id,
+        action: 'integrations.import_committed',
+        resource: 'spreadsheet_import',
+        resourceId: importId,
+        metadata: { committedRows: record.validRows },
+      });
+      return this.cloneSpreadsheetImport(committed);
+    });
+  }
+
+  rollbackSpreadsheetImport(actor: AuthenticatedUser, importId: string, reason: string) {
+    return this.withWrite(() => {
+      const record = this.spreadsheetImports.get(importId);
+      if (!record) {
+        throw new NotFoundException('Import not found');
+      }
+      const now = new Date().toISOString();
+      const rolledBack: SpreadsheetImportRecord = {
+        ...record,
+        status: 'rolled_back',
+        rollbackReason: reason,
+        rolledBackBy: actor.id,
+        rolledBackAt: now,
+        updatedAt: now,
+      };
+      this.spreadsheetImports.set(importId, rolledBack);
+      this.addAuditLog({
+        actorUserId: actor.id,
+        action: 'integrations.import_rolled_back',
+        resource: 'spreadsheet_import',
+        resourceId: importId,
+        metadata: { reason },
+      });
+      return this.cloneSpreadsheetImport(rolledBack);
+    });
+  }
+
+  createPartnerApiKey(
+    actor: AuthenticatedUser,
+    payload: { partnerName: string; scopes: string[]; expiresAt?: string },
+  ) {
+    return this.withWrite(() => {
+      const now = new Date().toISOString();
+      const secret = `atlq_live_${this.randomToken(32)}`;
+      const secretHash = `sha256:${createHash('sha256').update(secret).digest('hex')}`;
+      const record: PartnerApiKeyRecord = {
+        id: this.nextId('pak'),
+        partnerName: payload.partnerName,
+        keyPrefix: secret.slice(0, 18),
+        secretHash,
+        scopes: [...payload.scopes],
+        status: 'active',
+        ...(payload.expiresAt ? { expiresAt: payload.expiresAt } : {}),
+        createdBy: actor.id,
+        createdAt: now,
+      };
+      this.partnerApiKeys.set(record.id, record);
+      this.addAuditLog({
+        actorUserId: actor.id,
+        action: 'integrations.api_key_created',
+        resource: 'partner_api_key',
+        resourceId: record.id,
+        metadata: { partnerName: record.partnerName },
+      });
+      return {
+        id: record.id,
+        partnerName: record.partnerName,
+        keyPrefix: record.keyPrefix,
+        scopes: [...record.scopes],
+        status: record.status,
+        ...(record.expiresAt ? { expiresAt: record.expiresAt } : {}),
+        createdBy: record.createdBy,
+        createdAt: record.createdAt,
+        secret,
+      };
+    });
+  }
+
+  createExportBundle(
+    actor: AuthenticatedUser,
+    payload: { tournamentId: string; formats: string[]; include: string[] },
+  ) {
+    return this.withWrite(() => {
+      const tournament = this.tournaments.get(payload.tournamentId);
+      if (!tournament) {
+        throw new NotFoundException('Tournament not found');
+      }
+      const now = new Date();
+      const expiresAt = new Date(now.getTime() + 60 * 60 * 1000).toISOString();
+      const record: ExportBundleRecord = {
+        id: this.nextId('exp'),
+        tournamentId: payload.tournamentId,
+        formats: [...payload.formats],
+        include: [...payload.include],
+        status: 'ready',
+        downloadUrl: `/api/integrations/export-bundles/${payload.tournamentId}/${this.randomToken(12)}`,
+        expiresAt,
+        createdBy: actor.id,
+        createdAt: now.toISOString(),
+      };
+      this.exportBundles.set(record.id, record);
+      return { ...record, formats: [...record.formats], include: [...record.include] };
+    });
+  }
+
+  createWebhookSubscription(
+    actor: AuthenticatedUser,
+    payload: { url: string; events: string[]; secretLabel?: string },
+  ) {
+    return this.withWrite(() => {
+      const now = new Date().toISOString();
+      const record: WebhookSubscriptionRecord = {
+        id: this.nextId('whk'),
+        url: payload.url,
+        events: [...payload.events],
+        ...(payload.secretLabel ? { secretLabel: payload.secretLabel } : {}),
+        status: 'active',
+        createdBy: actor.id,
+        createdAt: now,
+        updatedAt: now,
+      };
+      this.webhookSubscriptions.set(record.id, record);
+      return { ...record, events: [...record.events] };
+    });
+  }
+
+  createWebhookTestDelivery(actor: AuthenticatedUser, webhookId: string, event: string) {
+    return this.withWrite(() => {
+      const webhook = this.webhookSubscriptions.get(webhookId);
+      if (!webhook) {
+        throw new NotFoundException('Webhook subscription not found');
+      }
+      if (!webhook.events.includes(event)) {
+        throw new BadRequestException('Webhook is not subscribed to this event');
+      }
+      const record: WebhookDeliveryRecord = {
+        id: this.nextId('whd'),
+        webhookId,
+        event,
+        status: 'delivered',
+        attempt: 1,
+        responseCode: 202,
+        createdAt: new Date().toISOString(),
+      };
+      this.webhookDeliveries.set(record.id, record);
+      this.addAuditLog({
+        actorUserId: actor.id,
+        action: 'integrations.webhook_test_delivered',
+        resource: 'webhook_subscription',
+        resourceId: webhookId,
+        metadata: { event },
+      });
+      return { ...record };
+    });
+  }
+
+  getPublicTournamentFixtures(tournamentId: string) {
+    return this.readOperation(() => {
+      const tournament = this.tournaments.get(tournamentId);
+      if (!tournament) {
+        throw new NotFoundException('Tournament not found');
+      }
+      if (tournament.status === 'draft' || tournament.status === 'cancelled') {
+        throw new NotFoundException('Tournament not found');
+      }
+      const matches = [...this.matches.values()]
+        .filter((match) => match.tournamentId === tournamentId)
+        .sort((first, second) => first.scheduledAt.localeCompare(second.scheduledAt))
+        .map((match) => ({
+          matchId: match.id,
+          tournamentId,
+          scheduledAt: match.scheduledAt,
+          status: match.status,
+          homeTeamId: match.homeTeamId,
+          awayTeamId: match.awayTeamId,
+          homeTeamName: this.teams.get(match.homeTeamId)?.name ?? 'TBD',
+          awayTeamName: this.teams.get(match.awayTeamId)?.name ?? 'TBD',
+        }));
+      return {
+        tournamentId,
+        tournamentName: tournament.name,
+        sport: tournament.sport,
+        matches,
+      };
+    });
+  }
+
+  async getPublicTournamentResults(tournamentId: string) {
+    const fixtures = await this.getPublicTournamentFixtures(tournamentId);
+    return this.readOperation(() => {
+      return {
+        tournamentId,
+        tournamentName: fixtures.tournamentName,
+        results: fixtures.matches
+          .map((match) => {
+            const source = this.matches.get(match.matchId);
+            return {
+              ...match,
+              homeScore: source?.homeScore ?? null,
+              awayScore: source?.awayScore ?? null,
+            };
+          })
+          .filter((match) => match.status === 'verified'),
+      };
+    });
+  }
+
   recordQrScan(actor: AuthenticatedUser, code: string) {
     return this.withWrite(() => {
       const qr = this.qrCodes.get(code);
@@ -6788,6 +7230,45 @@ export class AppDataStore {
     };
 
     return user;
+  }
+
+  private cloneAnalyticsReportDraft(record: AnalyticsReportDraftRecord) {
+    return {
+      ...record,
+      sections: record.sections.map((section) => ({
+        ...section,
+        metrics: { ...section.metrics },
+      })),
+    };
+  }
+
+  private cloneSpreadsheetImport(record: SpreadsheetImportRecord) {
+    return {
+      ...record,
+      errors: record.errors.map((error) => ({ ...error })),
+      rows: record.rows.map((row) => ({ ...row })),
+    };
+  }
+
+  private validateImportRow(
+    entityType: ImportEntityType,
+    row: Record<string, string | number | boolean | null>,
+    rowIndex: number,
+  ) {
+    const errors: ImportErrorRecord[] = [];
+    const requiredFields =
+      entityType === 'athletes'
+        ? ['schoolId', 'fullName']
+        : entityType === 'schools'
+          ? ['name']
+          : ['tournamentId', 'schoolId', 'name'];
+    for (const field of requiredFields) {
+      const value = row[field];
+      if (value === undefined || value === null || String(value).trim() === '') {
+        errors.push({ rowIndex, field, message: `${field} is required` });
+      }
+    }
+    return errors;
   }
 
   private assertSafeStoredPassword(value: string) {

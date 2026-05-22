@@ -4,6 +4,7 @@ import {
   athletes,
   athleteGuardians,
   auditLogs,
+  analyticsReportDrafts,
   availabilityWindows,
   bracketNodes,
   brackets,
@@ -15,6 +16,7 @@ import {
   documentReviewFlags,
   documentReviewLinks,
   documentReviews,
+  exportBundles,
   facilities,
   federationOverrides,
   guardians,
@@ -28,6 +30,7 @@ import {
   officialAssignments,
   officialPayoutExports,
   officialProfiles,
+  partnerApiKeys,
   payments,
   qrCodes,
   refunds,
@@ -36,6 +39,7 @@ import {
   schoolUsers,
   standingRows,
   schools,
+  spreadsheetImports,
   syncMutations,
   teamMembers,
   teams,
@@ -47,6 +51,8 @@ import {
   venueUnits,
   waiverSignatures,
   waiverTemplates,
+  webhookDeliveries,
+  webhookSubscriptions,
 } from './schema.js';
 
 const foreignKeyTargets = (table: PgTable) =>
@@ -158,6 +164,12 @@ describe('database schema exports', () => {
     expect(qrCodes).toBeDefined();
     expect(syncMutations).toBeDefined();
     expect(federationOverrides).toBeDefined();
+    expect(analyticsReportDrafts).toBeDefined();
+    expect(spreadsheetImports).toBeDefined();
+    expect(partnerApiKeys).toBeDefined();
+    expect(exportBundles).toBeDefined();
+    expect(webhookSubscriptions).toBeDefined();
+    expect(webhookDeliveries).toBeDefined();
     expect(auditLogs).toBeDefined();
     expect(brackets).toBeDefined();
     expect(bracketVersions).toBeDefined();
@@ -207,6 +219,12 @@ describe('database schema exports', () => {
       qrCodes,
       syncMutations,
       federationOverrides,
+      analyticsReportDrafts,
+      spreadsheetImports,
+      partnerApiKeys,
+      exportBundles,
+      webhookSubscriptions,
+      webhookDeliveries,
       auditLogs,
       brackets,
       bracketVersions,
@@ -270,6 +288,16 @@ describe('database schema exports', () => {
     expectForeignKey(officialPayoutExports, ['official_profile_id'], 'official_profiles');
     expectForeignKey(qrCodes, ['created_by'], 'users');
     expectForeignKey(auditLogs, ['actor_user_id'], 'users');
+    expectForeignKey(analyticsReportDrafts, ['created_by'], 'users');
+    expectForeignKey(analyticsReportDrafts, ['approved_by'], 'users');
+    expectForeignKey(spreadsheetImports, ['created_by'], 'users');
+    expectForeignKey(spreadsheetImports, ['committed_by'], 'users');
+    expectForeignKey(spreadsheetImports, ['rolled_back_by'], 'users');
+    expectForeignKey(partnerApiKeys, ['created_by'], 'users');
+    expectForeignKey(exportBundles, ['tournament_id'], 'tournaments');
+    expectForeignKey(exportBundles, ['created_by'], 'users');
+    expectForeignKey(webhookSubscriptions, ['created_by'], 'users');
+    expectForeignKey(webhookDeliveries, ['webhook_id'], 'webhook_subscriptions');
     expectForeignKey(brackets, ['tournament_id'], 'tournaments');
     expectForeignKey(brackets, ['created_by'], 'users');
     expectForeignKey(bracketVersions, ['bracket_id'], 'brackets');
@@ -371,6 +399,15 @@ describe('database schema exports', () => {
     ).toEqual(['tenant_id', 'id']);
     expect(
       uniqueIndexColumnNames(officialPayoutExports, 'official_payout_exports_tenant_id_id_unique'),
+    ).toEqual(['tenant_id', 'id']);
+    expect(
+      uniqueIndexColumnNames(analyticsReportDrafts, 'analytics_report_drafts_tenant_id_id_unique'),
+    ).toEqual(['tenant_id', 'id']);
+    expect(
+      uniqueIndexColumnNames(spreadsheetImports, 'spreadsheet_imports_tenant_id_id_unique'),
+    ).toEqual(['tenant_id', 'id']);
+    expect(
+      uniqueIndexColumnNames(webhookSubscriptions, 'webhook_subscriptions_tenant_id_id_unique'),
     ).toEqual(['tenant_id', 'id']);
   });
 
@@ -524,6 +561,16 @@ describe('database schema exports', () => {
       officialPayoutExports,
       ['tenant_id', 'tournament_id'],
       'tournaments',
+      ['tenant_id', 'id'],
+    );
+    expectCompositeForeignKey(exportBundles, ['tenant_id', 'tournament_id'], 'tournaments', [
+      'tenant_id',
+      'id',
+    ]);
+    expectCompositeForeignKey(
+      webhookDeliveries,
+      ['tenant_id', 'webhook_id'],
+      'webhook_subscriptions',
       ['tenant_id', 'id'],
     );
     expectCompositeForeignKey(

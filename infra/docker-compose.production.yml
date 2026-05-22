@@ -1,0 +1,97 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-athletiq}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-athletiq}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ['redis-server', '--appendonly', 'yes']
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  api:
+    image: ${ATHLETIQ_API_IMAGE:?Set ATHLETIQ_API_IMAGE}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      API_PORT: 4000
+      ATHLETIQ_DATA_BACKEND: postgres
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL}
+      REDIS_URL: ${REDIS_URL:?Set REDIS_URL}
+      ATHLETIQ_JWT_SECRET: ${ATHLETIQ_JWT_SECRET:?Set ATHLETIQ_JWT_SECRET}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4318}
+      ATHLETIQ_RELEASE_SHA: ${ATHLETIQ_RELEASE_SHA:-local}
+    ports:
+      - '${API_PORT:-4000}:4000'
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'node -e "fetch(''http://127.0.0.1:4000/api/health/readiness'').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"',
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+
+  web:
+    image: ${ATHLETIQ_WEB_IMAGE:?Set ATHLETIQ_WEB_IMAGE}
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      WEB_PUBLIC_API_URL: ${WEB_PUBLIC_API_URL:?Set WEB_PUBLIC_API_URL}
+      ATHLETIQ_RELEASE_SHA: ${ATHLETIQ_RELEASE_SHA:-local}
+    ports:
+      - '${WEB_PORT:-3000}:3000'
+
+  worker:
+    image: ${ATHLETIQ_WORKER_IMAGE:?Set ATHLETIQ_WORKER_IMAGE}
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      REDIS_URL: ${REDIS_URL:?Set REDIS_URL}
+      ATHLETIQ_RELEASE_SHA: ${ATHLETIQ_RELEASE_SHA:-local}
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.101.0
+    restart: unless-stopped
+    command: ['--config=/etc/otelcol-contrib/config.yaml']
+    environment:
+      OTEL_BACKEND_OTLP_ENDPOINT: ${OTEL_BACKEND_OTLP_ENDPOINT:?Set OTEL_BACKEND_OTLP_ENDPOINT}
+      OTEL_BACKEND_OTLP_HEADERS: ${OTEL_BACKEND_OTLP_HEADERS:-}
+    volumes:
+      - ./observability/otel-collector.yaml:/etc/otelcol-contrib/config.yaml:ro
+    ports:
+      - '${OTEL_GRPC_PORT:-4317}:4317'
+      - '${OTEL_HTTP_PORT:-4318}:4318'
+
+volumes:
+  postgres-data:
+  redis-data:

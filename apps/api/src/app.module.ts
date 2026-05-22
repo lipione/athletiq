@@ -24,6 +24,7 @@ import { WaiversModule } from './waivers/waivers.module.js';
 import { BracketsModule } from './brackets/brackets.module.js';
 import { SchedulingModule } from './scheduling/scheduling.module.js';
 import { CommunicationsModule } from './communications/communications.module.js';
+import { IntegrationsModule } from './integrations/integrations.module.js';
 
 @Module({
   imports: [
@@ -46,6 +47,7 @@ import { CommunicationsModule } from './communications/communications.module.js'
     BracketsModule,
     SchedulingModule,
     CommunicationsModule,
+    IntegrationsModule,
     TenancyModule,
     DatabaseModule,
     RepositoryModule,

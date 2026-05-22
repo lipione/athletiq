@@ -12,6 +12,16 @@ type OverrideBody = {
   reason?: string;
 };
 
+type ReportDraftBody = {
+  reportType?: string;
+  scope?: string;
+  locale?: string;
+};
+
+type ReportApprovalBody = {
+  note?: string;
+};
+
 @Controller('analytics')
 export class AnalyticsController {
   constructor(@Inject(AnalyticsService) private readonly analyticsService: AnalyticsService) {}
@@ -36,6 +46,64 @@ export class AnalyticsController {
   @HttpCode(200)
   exportTournament(@Param('tournamentId') tournamentId: string) {
     return this.analyticsService.exportTournament(tournamentId);
+  }
+
+  @Get('athletes/:athleteId/development')
+  @Roles('federation_admin', 'government_viewer', 'super_admin')
+  @Permissions('analytics.read')
+  athleteDevelopment(@Param('athleteId') athleteId: string) {
+    return this.analyticsService.getAthleteDevelopment(athleteId);
+  }
+
+  @Get('rankings')
+  @Roles('federation_admin', 'government_viewer', 'super_admin')
+  @Permissions('analytics.read')
+  rankings(
+    @Query('scope') scope?: string,
+    @Query('sport') sport?: string,
+    @Query('metric') metric?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.analyticsService.getRankings({
+      ...(scope ? { scope } : {}),
+      ...(sport ? { sport } : {}),
+      ...(metric ? { metric } : {}),
+      ...(limit ? { limit } : {}),
+    });
+  }
+
+  @Get('data-quality')
+  @Roles('federation_admin', 'government_viewer', 'super_admin')
+  @Permissions('analytics.read')
+  dataQuality() {
+    return this.analyticsService.getDataQualityDashboard();
+  }
+
+  @Get('data-products/exports')
+  @Roles('federation_admin', 'government_viewer', 'super_admin')
+  @Permissions('analytics.export')
+  dataProductExports() {
+    return this.analyticsService.getDataProductExports();
+  }
+
+  @Post('reports/drafts')
+  @Roles('federation_admin', 'super_admin')
+  @Permissions('analytics.override')
+  @HttpCode(201)
+  createReportDraft(@CurrentUser() actor: AuthenticatedUser, @Body() body: ReportDraftBody) {
+    return this.analyticsService.createReportDraft(actor, body);
+  }
+
+  @Post('reports/drafts/:draftId/approve')
+  @Roles('federation_admin', 'super_admin')
+  @Permissions('analytics.override')
+  @HttpCode(201)
+  approveReportDraft(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Param('draftId') draftId: string,
+    @Body() body: ReportApprovalBody,
+  ) {
+    return this.analyticsService.approveReportDraft(actor, draftId, body);
   }
 
   @Post('federation/overrides')

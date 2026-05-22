@@ -1,5 +1,7 @@
 import type {
   AuditRecord,
+  AnalyticsReportDraftRecord,
+  AnalyticsReportSectionRecord,
   AthleteRecord,
   AuthenticatedUser,
   AnnouncementRecord,
@@ -22,6 +24,7 @@ import type {
   DocumentReviewQueueItem,
   DocumentReviewResult,
   ExtractedIdentityFields,
+  ExportBundleRecord,
   FinanceReportRecord,
   FacilityRecord,
   FamilyDashboardRecord,
@@ -31,6 +34,7 @@ import type {
   IdentityDocumentRecord,
   IdentityDocumentStatus,
   IdentityDocumentType,
+  ImportEntityType,
   InvoiceRecord,
   MembershipPlanRecord,
   MatchScheduleRecord,
@@ -48,6 +52,7 @@ import type {
   NotificationDeliveryRecord,
   NotificationPreferenceRecord,
   PaymentRecord,
+  PartnerApiKeyRecord,
   PublicBracketView,
   QrCodeRecord,
   RefundRecord,
@@ -55,6 +60,7 @@ import type {
   SchoolRecord,
   SchoolMembershipRecord,
   SearchResults,
+  SpreadsheetImportRecord,
   SyncMutationRecord,
   TournamentAthleteStat,
   TournamentFormat,
@@ -67,6 +73,8 @@ import type {
   VenueUnitType,
   WaiverSignatureRecord,
   WaiverTemplateRecord,
+  WebhookDeliveryRecord,
+  WebhookSubscriptionRecord,
   ThreadMessageRecord,
 } from '../common/store.js';
 import type { UserRole } from '../common/roles.js';
@@ -104,6 +112,7 @@ export const SEARCH_REPOSITORY = Symbol('SEARCH_REPOSITORY');
 export const ANALYTICS_REPOSITORY = Symbol('ANALYTICS_REPOSITORY');
 export const WAIVER_REPOSITORY = Symbol('WAIVER_REPOSITORY');
 export const COMMUNICATION_REPOSITORY = Symbol('COMMUNICATION_REPOSITORY');
+export const INTEGRATION_REPOSITORY = Symbol('INTEGRATION_REPOSITORY');
 
 export type UserRepositoryToken = typeof USER_REPOSITORY;
 export type AuthSessionRepositoryToken = typeof AUTH_SESSION_REPOSITORY;
@@ -122,6 +131,7 @@ export type SearchRepositoryToken = typeof SEARCH_REPOSITORY;
 export type AnalyticsRepositoryToken = typeof ANALYTICS_REPOSITORY;
 export type WaiverRepositoryToken = typeof WAIVER_REPOSITORY;
 export type CommunicationRepositoryToken = typeof COMMUNICATION_REPOSITORY;
+export type IntegrationRepositoryToken = typeof INTEGRATION_REPOSITORY;
 
 export type CreateUserInput = {
   email: string;
@@ -939,15 +949,106 @@ export type FederationOverrideResult = {
   targetId: string;
 };
 
+export type CreateAnalyticsReportDraftInput = {
+  actor: AuthenticatedUser;
+  reportType: AnalyticsReportDraftRecord['reportType'];
+  scope: string;
+  locale: AnalyticsReportDraftRecord['locale'];
+  sections: AnalyticsReportSectionRecord[];
+};
+
 export interface AnalyticsRepository {
   listSchools(): Promise<SchoolRecord[]>;
   listTournaments(): Promise<TournamentRecord[]>;
   listTeams(tournamentId?: string, schoolId?: string): Promise<TournamentTeamRecord[]>;
   listAthletes(): Promise<AthleteRecord[]>;
+  listMatches(tournamentId?: string): Promise<MatchRecord[]>;
+  listMatchEvents(matchId: string): Promise<MatchEventRecord[]>;
   findTournamentById(tournamentId: string): Promise<TournamentRecord | undefined>;
   getTournamentLeaderboard(tournamentId: string, limit?: number): Promise<TournamentLeaderboard>;
+  createReportDraft(input: CreateAnalyticsReportDraftInput): Promise<AnalyticsReportDraftRecord>;
+  approveReportDraft(
+    actor: AuthenticatedUser,
+    draftId: string,
+    note?: string,
+  ): Promise<AnalyticsReportDraftRecord>;
   recordFederationOverride(
     actor: AuthenticatedUser,
     input: FederationOverrideInput,
   ): Promise<FederationOverrideResult>;
+}
+
+export type SpreadsheetImportPreviewInput = {
+  actor: AuthenticatedUser;
+  sourceName: string;
+  entityType: ImportEntityType;
+  rows: Array<Record<string, string | number | boolean | null>>;
+};
+
+export type CommitSpreadsheetImportInput = {
+  actor: AuthenticatedUser;
+  importId: string;
+  mode?: string;
+};
+
+export type RollbackSpreadsheetImportInput = {
+  actor: AuthenticatedUser;
+  importId: string;
+  reason: string;
+};
+
+export type CreatePartnerApiKeyInput = {
+  actor: AuthenticatedUser;
+  partnerName: string;
+  scopes: string[];
+  expiresAt?: string;
+};
+
+export type PartnerApiKeyCreatedRecord = Omit<PartnerApiKeyRecord, 'secretHash'> & {
+  secret: string;
+};
+
+export type CreateExportBundleInput = {
+  actor: AuthenticatedUser;
+  tournamentId: string;
+  formats: string[];
+  include: string[];
+};
+
+export type CreateWebhookSubscriptionInput = {
+  actor: AuthenticatedUser;
+  url: string;
+  events: string[];
+  secretLabel?: string;
+};
+
+export type CreateWebhookTestDeliveryInput = {
+  actor: AuthenticatedUser;
+  webhookId: string;
+  event: string;
+};
+
+export interface IntegrationRepository {
+  previewSpreadsheetImport(input: SpreadsheetImportPreviewInput): Promise<SpreadsheetImportRecord>;
+  commitSpreadsheetImport(input: CommitSpreadsheetImportInput): Promise<SpreadsheetImportRecord>;
+  rollbackSpreadsheetImport(
+    input: RollbackSpreadsheetImportInput,
+  ): Promise<SpreadsheetImportRecord>;
+  createPartnerApiKey(input: CreatePartnerApiKeyInput): Promise<PartnerApiKeyCreatedRecord>;
+  getPublicTournamentFixtures(tournamentId: string): Promise<{
+    tournamentId: string;
+    tournamentName: string;
+    sport: string;
+    matches: Array<Record<string, string | number | null>>;
+  }>;
+  getPublicTournamentResults(tournamentId: string): Promise<{
+    tournamentId: string;
+    tournamentName: string;
+    results: Array<Record<string, string | number | null>>;
+  }>;
+  createExportBundle(input: CreateExportBundleInput): Promise<ExportBundleRecord>;
+  createWebhookSubscription(
+    input: CreateWebhookSubscriptionInput,
+  ): Promise<WebhookSubscriptionRecord>;
+  createWebhookTestDelivery(input: CreateWebhookTestDeliveryInput): Promise<WebhookDeliveryRecord>;
 }

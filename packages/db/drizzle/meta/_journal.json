@@ -85,6 +85,13 @@
       "when": 1779445780747,
       "tag": "0011_phase_13_scheduling_hardening",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1779459000000,
+      "tag": "0012_phase_18_19_reports_integrations",
+      "breakpoints": true
     }
   ]
 }

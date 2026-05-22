@@ -162,6 +162,24 @@ pnpm test
 pnpm build
 ```
 
+## Production Operations
+
+Production hardening artifacts live under `infra/` and `docs/operations/`:
+
+- `infra/docker-compose.production.yml` for single-host or smoke environments.
+- `infra/k8s/*-deployment.yaml` for API, web, and worker Kubernetes baselines.
+- `infra/observability/otel-collector.yaml` for OTLP collection and forwarding.
+- `infra/load-tests/k6-smoke.js` for a small API health smoke test.
+- `docs/operations/production-readiness.md`, `pilot-playbook.md`, and `disaster-recovery.md` for launch and recovery checks.
+
+Production requires PostgreSQL, Redis, secret-managed `DATABASE_URL`, `REDIS_URL`, `ATHLETIQ_JWT_SECRET`, immutable image tags, and `ATHLETIQ_RELEASE_SHA`.
+
+Smoke a deployed API with:
+
+```bash
+BASE_URL=https://api.example.com k6 run infra/load-tests/k6-smoke.js
+```
+
 Run apps:
 
 ```bash
