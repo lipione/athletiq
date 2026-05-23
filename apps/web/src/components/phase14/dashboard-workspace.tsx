@@ -9,6 +9,7 @@ import { DataTable, type DataTableColumn } from './data-table.js';
 import { MetricStrip } from './metric-strip.js';
 import { EmptyState, ErrorState } from './state.js';
 import { StatusBadge } from './status-badge.js';
+import { routeForWorkspace } from '../../lib/phase14-format.js';
 
 const dashboardColumns: DataTableColumn<DashboardRow>[] = [
   { header: 'Item', cell: (row) => row.label },
@@ -26,6 +27,8 @@ const rosterColumns: DataTableColumn<SchoolAthlete>[] = [
 ];
 
 export function DashboardWorkspace({ dashboard }: { dashboard: DashboardSnapshot }) {
+  const primaryHref = dashboard.quickLinks[0]?.href ?? routeForWorkspace(dashboard.role);
+
   return (
     <div className="stack">
       <section className="workspace-hero">
@@ -34,7 +37,7 @@ export function DashboardWorkspace({ dashboard }: { dashboard: DashboardSnapshot
           <h2>{dashboard.title}</h2>
           <p>{dashboard.subtitle}</p>
         </div>
-        <a className="primary-action" href={dashboard.quickLinks[0]?.href ?? '#'}>
+        <a className="primary-action" href={primaryHref}>
           {dashboard.primaryAction}
           <ArrowRight aria-hidden="true" size={18} />
         </a>
